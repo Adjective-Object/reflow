@@ -5,8 +5,8 @@ import (
 	"io"
 
 	"github.com/mattn/go-runewidth"
-
 	"github.com/muesli/reflow/ansi"
+	"github.com/muesli/reflow/stepper"
 )
 
 type Writer struct {
@@ -15,7 +15,6 @@ type Writer struct {
 
 	ansiWriter *ansi.Writer
 	buf        bytes.Buffer
-	ansi       bool
 }
 
 func NewWriter(width uint, tail string) *Writer {
@@ -79,16 +78,21 @@ func (w *Writer) Write(b []byte) (int, error) {
 	w.width -= uint(tw)
 	var curWidth uint
 
-	for _, c := range string(b) {
-		if c == ansi.Marker {
-			// ANSI escape sequence
-			w.ansi = true
-		} else if w.ansi {
-			if ansi.IsTerminator(c) {
-				// ANSI sequence terminated
-				w.ansi = false
-			}
-		} else {
+	stepState := stepper.Stepper{}
+
+	var linkStacks []string
+
+	bi := 0
+	s := string(b)
+	for i, c := range s {
+		// consume all the bytes of this character in the stepper
+		var step stepper.CollectorStep
+		for ; bi < i; bi++ {
+			step = stepState.Next(s[bi])
+		}
+
+		// if we're in a non-printing sequence, don't count the width of this character
+		if step.IsPrinting() {
 			curWidth += uint(runewidth.RuneWidth(c))
 		}
 

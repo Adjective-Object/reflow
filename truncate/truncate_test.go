@@ -147,6 +147,16 @@ func TestTruncateBytes(t *testing.T) {
 	}
 }
 
+func TestTruncateXtermLink(t *testing.T) {
+	t.Parallel()
+
+	actual := Bytes([]byte("click on \x1b]8;;https://example.com\x07linktext\x1b]8;;\x07"), 12)
+	expected := []byte("click on \x1b]8;;https://example.com\x07li\x1b]8;;\x07")
+	if !bytes.Equal(actual, expected) {
+		t.Errorf("expected:\n\n`%s`\n\nActual Output:\n\n`%s`", expected, actual)
+	}
+}
+
 func TestNewWriterPipe(t *testing.T) {
 	t.Parallel()
 

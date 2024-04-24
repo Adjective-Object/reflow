@@ -1,4 +1,4 @@
-package stepper
+package statemachine
 
 // internal State of the stepper's State-machine
 type State int

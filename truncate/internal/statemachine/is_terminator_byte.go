@@ -1,4 +1,4 @@
-package stepper
+package statemachine
 
 const Marker = '\x1B'
 

@@ -10,7 +10,7 @@ import (
 
 	"github.com/mattn/go-runewidth"
 	"github.com/muesli/reflow/ansi"
-	"github.com/muesli/reflow/stepper"
+	"github.com/muesli/reflow/truncate/internal/statemachine"
 )
 
 type Writer struct {
@@ -78,7 +78,7 @@ func (w *Writer) Write(b []byte) (int, error) {
 	w.width -= uint(tw)
 	var curWidth uint
 
-	collector := stepper.CommandCollector{}
+	collector := statemachine.CommandCollector{}
 
 	var debugSequence []string
 	defer func() {
@@ -97,8 +97,8 @@ func (w *Writer) Write(b []byte) (int, error) {
 	needsColorReset := false
 
 	for i, c := range s {
-		// consume all the bytes of this character in the stepper
-		var step stepper.CollectorStep
+		// consume all the bytes of this character in the statemachine
+		var step statemachine.CollectorStep
 		for ; bi <= i; bi++ {
 			step = collector.Next(s[bi])
 		}
@@ -112,7 +112,7 @@ func (w *Writer) Write(b []byte) (int, error) {
 		}
 
 		// check if we just stepped a command
-		if step.Command.Type == stepper.TypeCSICommand {
+		if step.Command.Type == statemachine.TypeCSICommand {
 			if step.Command.CommandId == "0m" {
 				// Reset color sequence
 				needsColorReset = false

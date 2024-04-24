@@ -1,4 +1,4 @@
-package stepper
+package statemachine
 
 import (
 	"fmt"

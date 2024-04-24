@@ -1,4 +1,4 @@
-package stepper
+package statemachine
 
 type CommandType int
 

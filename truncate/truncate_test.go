@@ -82,6 +82,13 @@ func TestTruncate(t *testing.T) {
 		{
 			1,
 			"",
+			"\x1B[7m--\x1B[0m",
+			"\x1B[7m-\x1B[0m",
+		},
+		// Injects reset sequence for unterminated color sequences
+		{
+			1,
+			"",
 			"\x1B[7m--",
 			"\x1B[7m-\x1B[0m",
 		},
@@ -93,6 +100,13 @@ func TestTruncate(t *testing.T) {
 			"\x1B[7m--",
 		},
 		// Tail is printed before reset sequence:
+		{
+			3,
+			"…",
+			"\x1B[38;5;219mHiya!\x1B[0m",
+			"\x1B[38;5;219mHi…\x1B[0m",
+		},
+		// Injects reset sequence for unterminated color sequences
 		{
 			3,
 			"…",
@@ -177,7 +191,8 @@ func TestWriter_Error(t *testing.T) {
 	t.Parallel()
 
 	f := &Writer{
-		width: 2,
+		width:  2,
+		writer: fakeWriter{},
 	}
 
 	if _, err := f.Write([]byte("foo")); err != fakeErr {

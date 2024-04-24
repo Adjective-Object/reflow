@@ -17,7 +17,8 @@ type Writer struct {
 	width uint
 	tail  string
 
-	buf bytes.Buffer
+	writer io.Writer
+	buf    bytes.Buffer
 }
 
 func NewWriter(width uint, tail string) *Writer {
@@ -25,13 +26,15 @@ func NewWriter(width uint, tail string) *Writer {
 		width: width,
 		tail:  tail,
 	}
+	w.writer = &w.buf
 	return w
 }
 
 func NewWriterPipe(forward io.Writer, width uint, tail string) *Writer {
 	return &Writer{
-		width: width,
-		tail:  tail,
+		width:  width,
+		tail:   tail,
+		writer: forward,
 	}
 }
 
@@ -68,14 +71,14 @@ func StringWithTail(s string, width uint, tail string) string {
 // ansi sequences intact.
 func (w *Writer) Write(b []byte) (int, error) {
 	tw := ansi.PrintableRuneWidth(w.tail)
-	// if w.width < uint(tw) {
-	// 	return w.buf.WriteString(w.tail)
-	// }
+	if w.width < uint(tw) {
+		return w.buf.WriteString(w.tail)
+	}
 
 	w.width -= uint(tw)
 	var curWidth uint
 
-	stepState := stepper.Stepper{}
+	collector := stepper.CommandCollector{}
 
 	var debugSequence []string
 	defer func() {
@@ -87,11 +90,17 @@ func (w *Writer) Write(b []byte) (int, error) {
 
 	isTruncating := false
 
+	// In order to maintain legacy compatibility, the truncator
+	// will automatically add a reset color sequence to the end
+	// of any truncated sequence that contains a color sequence,
+	// that is not already reset
+	needsColorReset := false
+
 	for i, c := range s {
 		// consume all the bytes of this character in the stepper
-		var step stepper.StepperStep
+		var step stepper.CollectorStep
 		for ; bi <= i; bi++ {
-			step = stepState.Next(s[bi])
+			step = collector.Next(s[bi])
 		}
 
 		// if we're in a non-printing sequence, don't count the width of this character
@@ -102,10 +111,24 @@ func (w *Writer) Write(b []byte) (int, error) {
 			debugSequence = append(debugSequence, strconv.Quote(string(c)))
 		}
 
+		// check if we just stepped a command
+		if step.Command.Type == stepper.TypeCSICommand {
+			if step.Command.CommandId == "0m" {
+				// Reset color sequence
+				needsColorReset = false
+			} else if strings.HasSuffix(
+				step.Command.CommandId, "m",
+			) {
+				// Some non-reset color sequence -- we may need to reset
+				// at the end of the sequence
+				needsColorReset = true
+			}
+		}
+
 		// once we hit the max width, start truncating
-		if !isTruncating && curWidth >= w.width {
+		if !isTruncating && curWidth > w.width {
 			// when we start truncating, write the tail
-			n, err := w.buf.Write([]byte(w.tail))
+			n, err := w.writer.Write([]byte(w.tail))
 			if err != nil {
 				return i + n, err
 			}
@@ -120,13 +143,18 @@ func (w *Writer) Write(b []byte) (int, error) {
 		// characters to the buffer.
 		if !isPrinting || !isTruncating {
 			fmt.Println("writing")
-			_, err := w.buf.Write([]byte(string(c)))
+			_, err := w.writer.Write([]byte(string(c)))
 			if err != nil {
 				return 0, err
 			}
 		}
 	}
 
+	if needsColorReset {
+		// Append a color reset sequence
+		n, err := w.writer.Write([]byte("\x1b[0m"))
+		return len(b) + n, err
+	}
 	return len(b), nil
 }
 

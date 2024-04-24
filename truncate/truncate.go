@@ -150,7 +150,7 @@ func (w *Writer) Write(b []byte) (int, error) {
 		}
 	}
 
-	if needsColorReset {
+	if isTruncating && needsColorReset {
 		// Append a color reset sequence
 		n, err := w.writer.Write([]byte("\x1b[0m"))
 		return len(b) + n, err

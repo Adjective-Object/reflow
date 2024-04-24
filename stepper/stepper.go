@@ -1,9 +1,9 @@
 package stepper
 
-import "github.com/muesli/reflow/ansi"
-
+// internal state of the stepper's state-machine
 type state int
 
+// Reference: https://gist.github.com/ConnerWill/d4b6c776b509add763e17f9f113fd25b
 const (
 	// not in any ansi escape sequence
 	none state = iota
@@ -21,11 +21,29 @@ const (
 	oSCCommandId
 	oSCParam // a parameter to an OSC command
 
+	// we are in a CSI command
 	cSICommand
 
 	// unrecognized state
 	unknown
 )
+
+func (s state) String() string {
+	switch s {
+	case none:
+		return "none"
+	case gatheringEscapeSequence:
+		return "gatheringEscapeSequence"
+	case oSCCommandId:
+		return "oSCCommandId"
+	case oSCParam:
+		return "oSCParam"
+	case cSICommand:
+		return "cSICommand"
+	default:
+		return "unknown"
+	}
+}
 
 // True if this state is printing text
 func (s state) HasPayload() bool {
@@ -42,6 +60,8 @@ func (s state) IsPrinting() bool {
 	switch s {
 	case none:
 		return true
+	case oSCCommandId, gatheringEscapeSequence, oSCParam, cSICommand:
+		return false
 	default:
 		return false
 	}
@@ -54,11 +74,13 @@ func (s state) Step(b byte) (state, bool) {
 		if b == ';' {
 			return oSCParam, true
 		}
-		if b == '\x07' {
+		// See https://en.wikipedia.org/wiki/ANSI_escape_code#OSC_(Operating_System_Command)_sequences
+		// OSC sequences can be terminated by a BEL character or a ST character
+		if b == '\x07' || b == '\\' {
 			return none, true
 		}
 	default:
-		if ansi.IsTerminator(rune(b)) {
+		if IsTerminatorByte(b) {
 			return none, true
 		}
 	}
@@ -70,7 +92,8 @@ type knownSequence struct {
 	state    state
 }
 
-var KNOWN_SEQUENCES = [2]knownSequence{
+// See https://en.wikipedia.org/wiki/ANSI_escape_code#Fe_Escape_sequences
+var KNOWN_SEQUENCES = [...]knownSequence{
 	{"]", oSCCommandId},
 	{"[", cSICommand},
 }
@@ -88,10 +111,31 @@ type Stepper struct {
 	ansiSeqPrefix [4]byte
 }
 
+// Represents the transition between two states
+// as triggered by consuming a byte in a byte-sequence
 type StepperStep struct {
 	prevState state
 	nextState state
 	isChange  bool
+}
+
+func (s StepperStep) String() string {
+	if s.isChange {
+		return s.prevState.String() + " -> " + s.nextState.String()
+	}
+	return s.prevState.String() + " <no change>"
+
+}
+
+// If the character that triggered this transition should be printed
+// or not
+func (s *StepperStep) IsPrintingStep() bool {
+	return s.nextState.IsPrinting() && s.prevState.IsPrinting()
+}
+
+// If this step is a transition between states
+func (s *StepperStep) IsChange() bool {
+	return s.isChange
 }
 
 func (s *Stepper) changeState(next state) StepperStep {
@@ -110,13 +154,13 @@ func (s *Stepper) Next(b byte) StepperStep {
 	case none:
 		// if we are in normal text and see the ansi marker, start
 		// trying to gather the escape sequence
-		if b == ansi.Marker {
+		if b == Marker {
 			return s.changeState(gatheringEscapeSequence)
 		}
 	case gatheringEscapeSequence:
 		// if this was a terminator, abort sequence recognition;
 		// no sequences should contain a sequence-terminating character
-		if ansi.IsTerminator(rune(b)) {
+		if IsTerminatorByte(b) {
 			return s.changeState(none)
 		}
 

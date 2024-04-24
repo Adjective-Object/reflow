@@ -5,20 +5,18 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-
-	"github.com/muesli/reflow/ansi"
 )
 
 func TestKnownSequencesAreNotEscaping(t *testing.T) {
 	t.Parallel()
 
 	for i, seq := range KNOWN_SEQUENCES {
-		for _, r := range seq.Sequence {
-			if ansi.IsTerminator(r) {
+		for _, b := range []byte(seq.Sequence) {
+			if IsTerminatorByte(b) {
 				t.Errorf("sequence %d (%s) contains an escape character: %s",
 					i,
 					strconv.Quote(seq.Sequence),
-					strconv.Quote(string(r)),
+					strconv.Quote(string(rune(b))),
 				)
 			}
 		}
@@ -127,7 +125,7 @@ func runStepperTest(t *testing.T, testCase stepperTestCase) {
 }
 
 func TestStepCSISequence(t *testing.T) {
-	runTest(
+	runStepperTest(
 		t,
 		stepperTestCase{
 			steps: []stepperTestCaseStep{
@@ -142,7 +140,7 @@ func TestStepCSISequence(t *testing.T) {
 }
 
 func TestStepUnknownEarlyTermSequence(t *testing.T) {
-	runTest(
+	runStepperTest(
 		t,
 		stepperTestCase{
 			steps: []stepperTestCaseStep{
@@ -157,7 +155,7 @@ func TestStepUnknownEarlyTermSequence(t *testing.T) {
 }
 
 func TestStepUnknownLongSequence(t *testing.T) {
-	runTest(
+	runStepperTest(
 		t,
 		stepperTestCase{
 			steps: []stepperTestCaseStep{
@@ -176,7 +174,7 @@ func TestStepUnknownLongSequence(t *testing.T) {
 }
 
 func TestStepLink(t *testing.T) {
-	runTest(
+	runStepperTest(
 		t,
 		stepperTestCase{
 			steps: []stepperTestCaseStep{

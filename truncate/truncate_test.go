@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"testing"
-
-	"github.com/muesli/reflow/ansi"
 )
 
 func TestTruncate(t *testing.T) {
@@ -149,9 +147,9 @@ func TestTruncateBytes(t *testing.T) {
 
 func TestTruncateXtermLink(t *testing.T) {
 	t.Parallel()
-
-	actual := Bytes([]byte("click on \x1b]8;;https://example.com\x07linktext\x1b]8;;\x07"), 12)
-	expected := []byte("click on \x1b]8;;https://example.com\x07li\x1b]8;;\x07")
+	// See https://gist.github.com/egmontkob/eb114294efbcd5adb1944c9f3cb5feda
+	actual := Bytes([]byte("click on \x1b]8;;https://example.com\x07\\linktext\x1b]8;;\x1b\\"), 12)
+	expected := []byte("click on \x1b]8;;https://example.com\x07\\li\x1b]8;;\x1b\\")
 	if !bytes.Equal(actual, expected) {
 		t.Errorf("expected:\n\n`%s`\n\nActual Output:\n\n`%s`", expected, actual)
 	}
@@ -179,8 +177,7 @@ func TestWriter_Error(t *testing.T) {
 	t.Parallel()
 
 	f := &Writer{
-		width:      2,
-		ansiWriter: &ansi.Writer{Forward: fakeWriter{}},
+		width: 2,
 	}
 
 	if _, err := f.Write([]byte("foo")); err != fakeErr {

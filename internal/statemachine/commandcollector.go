@@ -8,21 +8,32 @@ const (
 	TypeCSICommand
 )
 
-// CommandCollector is used to collect ANSI commands
-// with their parmaeters from the state transitions
-// produced by the stepper.
+// a Command represents a single ANSI command
 type Command struct {
-	Type      CommandType
+	Type CommandType
+	// The command ID.
+	// For OSC commands, this is the command number.
+	// For CSI commands, this is the full body of the command
 	CommandId string
-	Params    []string
+	// For OSC commands, this is the parameters to the command,
+	// separated by semicolons.
+	//
+	// For CSI commands, this will always be `nil`
+	Params []string
 }
 
+// CommandCollector is used to collect ANSI commands
+// with their parameters from the state transitions
+// produced by the stepper.
 type CommandCollector struct {
 	stepper         StateMachine
 	buildingCommand Command
 	currentPayload  []byte
 }
 
+// Wrapper for the state transition produced by the stepper
+// that also includes the command (if any) produced by the
+// step.
 type CollectorStep struct {
 	Command Command
 	StateTransition
@@ -33,9 +44,9 @@ func (collector *CommandCollector) Next(b byte) CollectorStep {
 		StateTransition: collector.stepper.Next(b),
 	}
 
-	if step.isChange {
+	if step.IsChange {
 		// build the right param of the command
-		switch step.prevState {
+		switch step.PreviousState {
 		case oscCommandID:
 			collector.buildingCommand.Type = TypeOSCCommand
 			collector.buildingCommand.CommandId = string(collector.currentPayload)
@@ -51,18 +62,18 @@ func (collector *CommandCollector) Next(b byte) CollectorStep {
 		}
 
 		// if we terminated a command, return it and clear the stored command
-		if step.nextState == nonAnsi {
+		if step.NextState == nonAnsi {
 			if collector.buildingCommand.Type != 0 {
 				step.Command = collector.buildingCommand
 				collector.buildingCommand = Command{}
 			}
 		}
-	} else if step.nextState == oscParameter && b == ':' {
+	} else if step.NextState == oscParameter && b == ':' {
 		// if we're in oscParameter and we hit a colon, we're about to start a new parameter
 		collector.buildingCommand.Params = append(collector.buildingCommand.Params, string(collector.currentPayload))
 		collector.currentPayload = nil
 	} else {
-		if step.nextState.HasPayload() {
+		if step.NextState.HasPayload() {
 			// aggregate the payload
 			collector.currentPayload = append(collector.currentPayload, b)
 		}

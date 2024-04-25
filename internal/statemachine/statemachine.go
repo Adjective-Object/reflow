@@ -11,8 +11,8 @@ const (
 	// special state: we have seen \x1b and are looking for
 	// the following characters to recognize the escape sequence
 	//
-	// If we see a valid terminator, we will transition to
-	// the corresponding knownEscapeSequence state.
+	// If we see a valid terminator, we will transition to either
+	// oscCommandID or csiCommand
 	gatheringEscapeSequence
 
 	// Collecting the ID of the OSC command
@@ -45,7 +45,10 @@ func (s State) String() string {
 	}
 }
 
-// True if this state is printing text
+// True if this state has a "payload" -- text which should be gathered
+// in order to understand the command
+//
+// See: CommandCollector
 func (s State) HasPayload() bool {
 	switch s {
 	case oscCommandID, oscParameter, csiCommand:
@@ -97,51 +100,36 @@ type StateMachine struct {
 // Represents the transition between two states
 // as triggered by consuming a byte in a byte-sequence
 type StateTransition struct {
-	prevState State
-	nextState State
-	isChange  bool
+	PreviousState State
+	NextState     State
+	IsChange      bool
 }
 
+// String representation of the transition, for debug purposes
 func (s StateTransition) String() string {
-	if s.isChange {
-		return s.prevState.String() + " -> " + s.nextState.String()
+	if s.IsChange {
+		return s.PreviousState.String() + " -> " + s.NextState.String()
 	}
-	return s.prevState.String() + " <no change>"
+	return s.PreviousState.String() + " <no change>"
 }
 
 // If the character that triggered this transition should be printed
 // or not
 func (s *StateTransition) IsPrintingStep() bool {
-	return s.nextState.IsPrinting() && s.prevState.IsPrinting()
-}
-
-// If the character that triggered this transition should be printed
-// or not
-func (s *StateTransition) PreviousState() State {
-	return s.prevState
-}
-
-// If the character that triggered this transition should be printed
-// or not
-func (s *StateTransition) NextState() State {
-	return s.nextState
-}
-
-// If this step is a transition between states
-func (s *StateTransition) IsChange() bool {
-	return s.isChange
+	return s.NextState.IsPrinting() && s.PreviousState.IsPrinting()
 }
 
 func (s *StateMachine) changeState(next State) StateTransition {
 	step := StateTransition{
-		prevState: s.state,
-		nextState: next,
-		isChange:  true,
+		PreviousState: s.state,
+		NextState:     next,
+		IsChange:      true,
 	}
 	s.state = next
 	return step
 }
 
+// Advances the state machine by one byte
 func (s *StateMachine) Next(b byte) StateTransition {
 	switch s.state {
 	case nonAnsi:

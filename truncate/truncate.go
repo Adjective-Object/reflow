@@ -2,9 +2,7 @@ package truncate
 
 import (
 	"bytes"
-	"fmt"
 	"io"
-	"strconv"
 
 	"strings"
 
@@ -80,11 +78,6 @@ func (w *Writer) Write(b []byte) (int, error) {
 
 	collector := statemachine.CommandCollector{}
 
-	var debugSequence []string
-	defer func() {
-		fmt.Println("printable sequence:", strings.Join(debugSequence, ", "))
-	}()
-
 	bi := 0
 	s := string(b)
 
@@ -107,8 +100,6 @@ func (w *Writer) Write(b []byte) (int, error) {
 		isPrinting := step.IsPrintingStep()
 		if isPrinting {
 			curWidth += uint(runewidth.RuneWidth(c))
-			// TODO delete
-			debugSequence = append(debugSequence, strconv.Quote(string(c)))
 		}
 
 		// check if we just stepped a command
@@ -135,14 +126,9 @@ func (w *Writer) Write(b []byte) (int, error) {
 			isTruncating = true
 		}
 
-		// TODO delete
-		fmt.Printf("w: %d \tc: %s \t\tstep: %s (printing: %v truncating: %v)\n", curWidth, strconv.Quote(string(c)), step,
-			isPrinting, isTruncating)
-
 		// when we start truncating, only write non-printable
 		// characters to the buffer.
 		if !isPrinting || !isTruncating {
-			fmt.Println("writing")
 			_, err := w.writer.Write([]byte(string(c)))
 			if err != nil {
 				return 0, err

@@ -97,7 +97,7 @@ func (w *Writer) Write(b []byte) (int, error) {
 		}
 
 		// if we're in a non-printing sequence, don't count the width of this character
-		isPrinting := step.IsPrintingStep()
+		isPrinting := step.IsPrinting()
 		if isPrinting {
 			curWidth += uint(runewidth.RuneWidth(c))
 		}

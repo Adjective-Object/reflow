@@ -4,6 +4,7 @@ import (
 	"bytes"
 
 	"github.com/mattn/go-runewidth"
+	"github.com/muesli/reflow/internal/statemachine"
 )
 
 // Buffer is a buffer aware of ANSI escape sequences.
@@ -20,18 +21,16 @@ func (w Buffer) PrintableRuneWidth() int {
 // PrintableRuneWidth returns the cell width of the given string.
 func PrintableRuneWidth(s string) int {
 	var n int
-	var ansi bool
 
-	for _, c := range s {
-		if c == Marker {
-			// ANSI escape sequence
-			ansi = true
-		} else if ansi {
-			if IsTerminator(c) {
-				// ANSI sequence terminated
-				ansi = false
-			}
-		} else {
+	stateMachine := statemachine.StateMachine{}
+
+	bi := 0
+	for i, c := range s {
+		var state statemachine.StateTransition
+		for ; bi <= i; bi++ {
+			state = stateMachine.Next(s[bi])
+		}
+		if state.IsPrinting() {
 			n += runewidth.RuneWidth(c)
 		}
 	}

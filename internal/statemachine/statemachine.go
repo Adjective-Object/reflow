@@ -115,7 +115,7 @@ func (s StateTransition) String() string {
 
 // If the character that triggered this transition should be printed
 // or not
-func (s *StateTransition) IsPrintingStep() bool {
+func (s *StateTransition) IsPrinting() bool {
 	return s.NextState.IsPrinting() && s.PreviousState.IsPrinting()
 }
 

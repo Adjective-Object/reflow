@@ -18,19 +18,19 @@ type Command struct {
 }
 
 type CommandCollector struct {
-	stepper         Stepper
+	stepper         StateMachine
 	buildingCommand Command
 	currentPayload  []byte
 }
 
 type CollectorStep struct {
 	Command Command
-	StepperStep
+	StateTransition
 }
 
 func (collector *CommandCollector) Next(b byte) CollectorStep {
 	step := CollectorStep{
-		StepperStep: collector.stepper.Next(b),
+		StateTransition: collector.stepper.Next(b),
 	}
 
 	if step.isChange {

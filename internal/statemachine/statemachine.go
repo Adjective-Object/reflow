@@ -8,7 +8,7 @@ const (
 	// not in any ansi escape sequence
 	nonAnsi State = iota
 
-	// special state: we have seen \xb and are looking for
+	// special state: we have seen \x1b and are looking for
 	// the following characters to recognize the escape sequence
 	//
 	// If we see a valid terminator, we will transition to
@@ -87,39 +87,22 @@ func (s State) Step(b byte) (State, bool) {
 	return s, false
 }
 
-type knownSequence struct {
-	Sequence string
-	state    State
-}
-
-// See https://en.wikipedia.org/wiki/ANSI_escape_code#Fe_Escape_sequences
-var KNOWN_SEQUENCES = [...]knownSequence{
-	{"]", oscCommandID},
-	{"[", csiCommand},
-}
-
-// Stepper is used to step through ANSI escape sequences.
+// StateMachine is used to step through ANSI escape sequences.
 // and is used to determine the printable width of a string.
-type Stepper struct {
+type StateMachine struct {
 	// state of the stepper
 	state State
-
-	// index into the current ansi identifier sequence
-	ansiSeqIdx int
-
-	// currently aggregating sequence
-	ansiSeqPrefix [4]byte
 }
 
 // Represents the transition between two states
 // as triggered by consuming a byte in a byte-sequence
-type StepperStep struct {
+type StateTransition struct {
 	prevState State
 	nextState State
 	isChange  bool
 }
 
-func (s StepperStep) String() string {
+func (s StateTransition) String() string {
 	if s.isChange {
 		return s.prevState.String() + " -> " + s.nextState.String()
 	}
@@ -128,39 +111,38 @@ func (s StepperStep) String() string {
 
 // If the character that triggered this transition should be printed
 // or not
-func (s *StepperStep) IsPrintingStep() bool {
+func (s *StateTransition) IsPrintingStep() bool {
 	return s.nextState.IsPrinting() && s.prevState.IsPrinting()
 }
 
 // If the character that triggered this transition should be printed
 // or not
-func (s *StepperStep) PreviousState() State {
+func (s *StateTransition) PreviousState() State {
 	return s.prevState
 }
 
 // If the character that triggered this transition should be printed
 // or not
-func (s *StepperStep) NextState() State {
+func (s *StateTransition) NextState() State {
 	return s.nextState
 }
 
 // If this step is a transition between states
-func (s *StepperStep) IsChange() bool {
+func (s *StateTransition) IsChange() bool {
 	return s.isChange
 }
 
-func (s *Stepper) changeState(next State) StepperStep {
-	step := StepperStep{
+func (s *StateMachine) changeState(next State) StateTransition {
+	step := StateTransition{
 		prevState: s.state,
 		nextState: next,
 		isChange:  true,
 	}
 	s.state = next
-	s.ansiSeqIdx = 0
 	return step
 }
 
-func (s *Stepper) Next(b byte) StepperStep {
+func (s *StateMachine) Next(b byte) StateTransition {
 	switch s.state {
 	case nonAnsi:
 		// if we are in normal text and see the ansi marker, start
@@ -175,23 +157,15 @@ func (s *Stepper) Next(b byte) StepperStep {
 			return s.changeState(nonAnsi)
 		}
 
-		// gather the sequence into the stepper
-		s.ansiSeqPrefix[s.ansiSeqIdx] = b
-		s.ansiSeqIdx++
-		if s.ansiSeqIdx >= len(s.ansiSeqPrefix) {
-			// overstepped max len of sequence - we failed recognition;
-			// go to "unknown"
+		switch b {
+		case ']':
+			return s.changeState(oscCommandID)
+		case '[':
+			return s.changeState(csiCommand)
+		default:
+			// we are in an unknown sequence
 			s.state = unknown
-			s.ansiSeqIdx = 0
-			return StepperStep{s.state, s.state, false}
-		} else {
-			// otherwise, we are still gathering the sequence;
-			// check each known sequence to see if we have a match
-			for _, seq := range KNOWN_SEQUENCES {
-				if len(seq.Sequence) == s.ansiSeqIdx && string(s.ansiSeqPrefix[:s.ansiSeqIdx]) == seq.Sequence {
-					return s.changeState(seq.state)
-				}
-			}
+			return StateTransition{s.state, s.state, false}
 		}
 	default:
 		// once we have a state, let it handle the byte
@@ -200,5 +174,5 @@ func (s *Stepper) Next(b byte) StepperStep {
 			return s.changeState(nextState)
 		}
 	}
-	return StepperStep{s.state, s.state, false}
+	return StateTransition{s.state, s.state, false}
 }

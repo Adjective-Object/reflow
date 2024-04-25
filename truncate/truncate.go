@@ -10,7 +10,7 @@ import (
 
 	"github.com/mattn/go-runewidth"
 	"github.com/muesli/reflow/ansi"
-	"github.com/muesli/reflow/truncate/internal/statemachine"
+	"github.com/muesli/reflow/internal/statemachine"
 )
 
 type Writer struct {

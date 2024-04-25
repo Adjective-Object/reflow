@@ -7,22 +7,6 @@ import (
 	"testing"
 )
 
-func TestKnownSequencesAreNotEscaping(t *testing.T) {
-	t.Parallel()
-
-	for i, seq := range KNOWN_SEQUENCES {
-		for _, b := range []byte(seq.Sequence) {
-			if IsTerminatorByte(b) {
-				t.Errorf("sequence %d (%s) contains an escape character: %s",
-					i,
-					strconv.Quote(seq.Sequence),
-					strconv.Quote(string(rune(b))),
-				)
-			}
-		}
-	}
-}
-
 type stepperTestCaseStep struct {
 	inputByte  byte
 	afterState State
@@ -74,7 +58,7 @@ func printState(steps []stepperTestCaseStep, b *strings.Builder) {
 }
 
 func runStepperTest(t *testing.T, testCase stepperTestCase) {
-	stepper := Stepper{}
+	stepper := StateMachine{}
 	realSteps := []stepperTestCaseStep{}
 
 	input := make([]byte, len(testCase.steps))

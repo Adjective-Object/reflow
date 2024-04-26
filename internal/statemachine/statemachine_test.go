@@ -12,7 +12,7 @@ type stepperTestCaseStep struct {
 	afterState State
 	printing   bool
 }
-type stepperTestCase struct {
+type stateMachineTestCase struct {
 	steps []stepperTestCaseStep
 }
 
@@ -57,7 +57,7 @@ func printState(steps []stepperTestCaseStep, b *strings.Builder) {
 	b.WriteString("\n")
 }
 
-func runStepperTest(t *testing.T, testCase stepperTestCase) {
+func runStateMachineTestCase(t *testing.T, testCase stateMachineTestCase) {
 	t.Helper()
 	stepper := StateMachine{}
 	realSteps := []stepperTestCaseStep{}
@@ -79,8 +79,8 @@ func runStepperTest(t *testing.T, testCase stepperTestCase) {
 		)
 		testStep := stepperTestCaseStep{
 			inputByte:  inputText[i],
-			afterState: step.NextState,
-			printing:   step.NextState.IsPrinting(),
+			afterState: stepper.state,
+			printing:   step.IsPrinting(),
 		}
 		if testStep != testCase.steps[i] {
 			mismatched = true
@@ -111,15 +111,17 @@ func runStepperTest(t *testing.T, testCase stepperTestCase) {
 
 func TestStepCSISequence(t *testing.T) {
 	t.Parallel()
-	runStepperTest(
+	runStateMachineTestCase(
 		t,
-		stepperTestCase{
+		stateMachineTestCase{
 			steps: []stepperTestCaseStep{
 				{' ', nonAnsi, true},
 				{'\x1b', gatheringEscapeSequence, false},
 				{'[', csiCommand, false},
 				{'4', csiCommand, false},
-				{'m', nonAnsi, true},
+				{'m', nonAnsi, false},
+				{':', nonAnsi, true},
+				{')', nonAnsi, true},
 			},
 		},
 	)
@@ -127,13 +129,13 @@ func TestStepCSISequence(t *testing.T) {
 
 func TestStepUnknownEarlyTermSequence(t *testing.T) {
 	t.Parallel()
-	runStepperTest(
+	runStateMachineTestCase(
 		t,
-		stepperTestCase{
+		stateMachineTestCase{
 			steps: []stepperTestCaseStep{
 				{' ', nonAnsi, true},
 				{'\x1b', gatheringEscapeSequence, false},
-				{'M', nonAnsi, true},
+				{'M', nonAnsi, false},
 				{':', nonAnsi, true},
 				{'3', nonAnsi, true},
 			},
@@ -143,9 +145,9 @@ func TestStepUnknownEarlyTermSequence(t *testing.T) {
 
 func TestStepUnknownLongSequence(t *testing.T) {
 	t.Parallel()
-	runStepperTest(
+	runStateMachineTestCase(
 		t,
-		stepperTestCase{
+		stateMachineTestCase{
 			steps: []stepperTestCaseStep{
 				{' ', nonAnsi, true},
 				{'\x1b', gatheringEscapeSequence, false},
@@ -154,7 +156,7 @@ func TestStepUnknownLongSequence(t *testing.T) {
 				{'4', unknown, false},
 				{'4', unknown, false},
 				{'4', unknown, false},
-				{'M', nonAnsi, true},
+				{'M', nonAnsi, false},
 				{' ', nonAnsi, true},
 			},
 		},
@@ -163,9 +165,9 @@ func TestStepUnknownLongSequence(t *testing.T) {
 
 func TestStepLink(t *testing.T) {
 	t.Parallel()
-	runStepperTest(
+	runStateMachineTestCase(
 		t,
-		stepperTestCase{
+		stateMachineTestCase{
 			steps: []stepperTestCaseStep{
 				{'h', nonAnsi, true},
 				{'i', nonAnsi, true},
@@ -192,7 +194,7 @@ func TestStepLink(t *testing.T) {
 				{'c', oscParameter, false},
 				{'o', oscParameter, false},
 				{'m', oscParameter, false},
-				{'\x07', nonAnsi, true},
+				{'\x07', nonAnsi, false},
 				{'t', nonAnsi, true},
 				{'e', nonAnsi, true},
 				{'x', nonAnsi, true},
@@ -202,7 +204,8 @@ func TestStepLink(t *testing.T) {
 				{'8', oscCommandID, false},
 				{';', oscParameter, false},
 				{';', oscParameter, false},
-				{'\x07', nonAnsi, true},
+				{'\x07', nonAnsi, false},
+				{':', nonAnsi, true},
 			},
 		},
 	)

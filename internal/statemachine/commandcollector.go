@@ -40,13 +40,15 @@ type CollectorStep struct {
 }
 
 func (collector *CommandCollector) Next(b byte) CollectorStep {
+	prev := collector.stepper.state
 	step := CollectorStep{
 		StateTransition: collector.stepper.Next(b),
 	}
+	next := collector.stepper.state
 
-	if step.IsChange() {
+	if prev != next {
 		// build the right param of the command
-		switch step.PreviousState {
+		switch prev {
 		case oscCommandID:
 			collector.buildingCommand.Type = TypeOSCCommand
 			collector.buildingCommand.CommandId = collector.currentPayload
@@ -62,18 +64,18 @@ func (collector *CommandCollector) Next(b byte) CollectorStep {
 		}
 
 		// if we terminated a command, return it and clear the stored command
-		if step.NextState == nonAnsi {
+		if next == nonAnsi {
 			if collector.buildingCommand.Type != 0 {
 				step.Command = collector.buildingCommand
 				collector.buildingCommand = Command{}
 			}
 		}
-	} else if step.NextState == oscParameter && b == ':' {
+	} else if next == oscParameter && b == ':' {
 		// if we're in oscParameter and we hit a colon, we're about to start a new parameter
 		collector.buildingCommand.Params = append(collector.buildingCommand.Params, collector.currentPayload)
 		collector.currentPayload = nil
 	} else {
-		if step.NextState.HasPayload() {
+		if next.HasPayload() {
 			// aggregate the payload
 			collector.currentPayload = append(collector.currentPayload, b)
 		}

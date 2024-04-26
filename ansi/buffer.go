@@ -20,6 +20,15 @@ func (w Buffer) PrintableRuneWidth() int {
 	return PrintableRuneWidth(w.String())
 }
 
+func isSingleByteRune(b byte) bool {
+	return b <= unicode.MaxASCII
+}
+
+// expects the input to already pass isSingleByteRune
+func isPrintableSingleByteRune(b byte) bool {
+	return b >= 0x20
+}
+
 // PrintableRuneWidth returns the cell width of the given string.
 func PrintableRuneWidth(s string) int {
 	var n int
@@ -28,11 +37,11 @@ func PrintableRuneWidth(s string) int {
 	for i < len(s) {
 		var stateTrans statemachine.StateTransition
 		var b = s[i]
-		if b <= unicode.MaxASCII && b > 0x20 {
+		if isSingleByteRune(b) {
 			// short-circuit for printable ASCII characters (most characters)
 			stateTrans = stateMachine.Next(b)
 			// all ASCII characters are 1 character wide
-			if stateTrans.IsPrinting() {
+			if stateTrans.IsPrinting() && isPrintableSingleByteRune(b) {
 				n += 1
 			}
 			i++

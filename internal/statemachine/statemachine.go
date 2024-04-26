@@ -1,12 +1,12 @@
 package statemachine
 
 // internal State of the stepper's State-machine
-type State int
+type State byte
 
 // Reference: https://gist.github.com/ConnerWill/d4b6c776b509add763e17f9f113fd25b
 const (
 	// not in any ansi escape sequence
-	nonAnsi State = iota
+	nonAnsi State = iota << 0
 
 	// unrecognized state
 	unknown
@@ -71,15 +71,6 @@ func (s State) Step(b byte) State {
 		if b == Marker {
 			return gatheringEscapeSequence
 		}
-	case oscCommandID, oscParameter:
-		if b == ';' {
-			return oscParameter
-		}
-		// See https://en.wikipedia.org/wiki/ANSI_escape_code#OSC_(Operating_System_Command)_sequences
-		// OSC sequences can be terminated by a BEL character or a ST character
-		if b == '\x07' || b == '\\' {
-			return nonAnsi
-		}
 	case gatheringEscapeSequence:
 		// if this was a terminator, abort sequence recognition;
 		// no sequences should contain a sequence-terminating character
@@ -95,6 +86,15 @@ func (s State) Step(b byte) State {
 		default:
 			// we are in an unknown sequence
 			return unknown
+		}
+	case oscCommandID, oscParameter:
+		if b == ';' {
+			return oscParameter
+		}
+		// See https://en.wikipedia.org/wiki/ANSI_escape_code#OSC_(Operating_System_Command)_sequences
+		// OSC sequences can be terminated by a BEL character or a ST character
+		if b == '\x07' || b == '\\' {
+			return nonAnsi
 		}
 	default:
 		if IsTerminatorByte(b) {
@@ -113,31 +113,16 @@ type StateMachine struct {
 
 // Represents the transition between two states
 // as triggered by consuming a byte in a byte-sequence
-type StateTransition struct {
-	PreviousState State
-	NextState     State
-}
-
-func (s StateTransition) IsChange() bool {
-	return s.PreviousState != s.NextState
-}
-
-// String representation of the transition, for debug purposes
-func (s StateTransition) String() string {
-	return s.PreviousState.String() + " -> " + s.NextState.String()
-}
+type StateTransition byte
 
 // If the character that triggered this transition should be printed
 // or not
 func (s *StateTransition) IsPrinting() bool {
-	return s.NextState.IsPrinting() && s.PreviousState.IsPrinting()
+	return State(*s) == nonAnsi
 }
 
 func (s *StateMachine) changeState(next State) StateTransition {
-	step := StateTransition{
-		PreviousState: s.state,
-		NextState:     next,
-	}
+	step := StateTransition(s.state | next)
 	s.state = next
 	return step
 }

@@ -2,6 +2,8 @@ package ansi
 
 import (
 	"bytes"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/mattn/go-runewidth"
 	"github.com/muesli/reflow/internal/statemachine"
@@ -22,20 +24,34 @@ func (w Buffer) PrintableRuneWidth() int {
 func PrintableRuneWidth(s string) int {
 	var n int
 	stateMachine := statemachine.StateMachine{}
-
-	bi := 0
-	for i, r := range s {
+	for i := 0; i < len(s); i++ {
 		var state statemachine.StateTransition
-		if r <= 0x7F {
-			state = stateMachine.Next(s[i])
+		if b := s[i]; b <= unicode.MaxASCII && b > 0x20 {
+			// short-circuit for printable ASCII characters (most characters)
+			state = stateMachine.Next(b)
+			// all ASCII characters are 1 character wide
+			if state.IsPrinting() {
+				n += 1
+			}
 		} else {
-			for ; bi <= i; bi++ {
-				state = stateMachine.Next(s[bi])
+			// collect the rune
+			r, size := utf8.DecodeRuneInString(s[i:])
+			j := i + size - 1
+			// advance state by each byte
+			for {
+				// postcondition loop for performance
+				state = stateMachine.Next(s[i])
+				if i >= j {
+					break
+				}
+				i++
+			}
+			// if we are in a printable state, count the rune width
+			if state.IsPrinting() {
+				n += runewidth.RuneWidth(r)
 			}
 		}
-		if state.IsPrinting() {
-			n += runewidth.RuneWidth(r)
-		}
+
 	}
 
 	return n

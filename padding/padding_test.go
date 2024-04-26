@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"strconv"
 	"testing"
 
 	"github.com/muesli/reflow/ansi"
@@ -45,6 +46,12 @@ func TestPadding(t *testing.T) {
 		{
 			"\x1B[38;2;249;38;114mfoo",
 			"\x1B[38;2;249;38;114mfoo   ",
+			6,
+		},
+		// OSC Xterm Links:
+		{
+			"\x1B]8;;https://github.com\x07foo",
+			"\x1B]8;;https://github.com\x07foo   ",
 			6,
 		},
 	}
@@ -106,6 +113,26 @@ func BenchmarkPaddingString(b *testing.B) {
 		b.ResetTimer()
 		for pb.Next() {
 			String("foobar", 10)
+		}
+	})
+}
+
+func BenchmarkPaddingBytes(b *testing.B) {
+	buf := []byte("foobar")
+	b.RunParallel(func(pb *testing.PB) {
+		b.ReportAllocs()
+		b.ResetTimer()
+		for pb.Next() {
+			Bytes(buf, 10)
+		}
+	})
+}
+
+func FuzzPaddingStringMatchesBytes(f *testing.F) {
+	f.Add("foobar", uint(10))
+	f.Fuzz(func(t *testing.T, a string, b uint) {
+		if String(a, b) != string(Bytes([]byte(a), b)) {
+			t.Fail()
 		}
 	})
 }
@@ -182,13 +209,58 @@ func TestWriter_Flush(t *testing.T) {
 	}
 }
 
+func TestWriter_Flush_Overflow(t *testing.T) {
+	t.Parallel()
+
+	f := NewWriter(10, nil)
+
+	// Write 100 chars to force the ansiwriter to flush at some point
+	// this should overflow the underlying buffer of the writer.
+	//
+	// If the ansiWriter doesn't handle this correctly, it will hold a
+	// reference to the _old_ value of the buffer instead when
+	// the buffer is flushed
+	for i := 0; i < 3; i++ {
+		_, err := f.Write([]byte("\x1B[38;2;249;38;114m"))
+		if err != nil {
+			t.Error(err)
+		}
+		for j := 0; j < 5+i; j++ {
+			_, err := f.WriteString("-")
+			if err != nil {
+				t.Error(err)
+			}
+		}
+
+		_, err = f.WriteString("\n")
+		if err != nil {
+			t.Error(err)
+		}
+	}
+
+	if err := f.Flush(); err != nil {
+		t.Error(err)
+	}
+
+	// We have _definitely_ forced a buffer resize by this point, so
+	// this should hold the ansi sequences + resets for each
+	// newline
+	exp := "" +
+		"\x1b[38;2;249;38;114m-----     \x1b[0m\n" +
+		"\x1b[38;2;249;38;114m------    \x1b[0m\n" +
+		"\x1b[38;2;249;38;114m-------   \x1b[0m\n"
+	if f.String() != exp {
+		t.Errorf("expected:\n\n`%s`\n\nActual Output:\n\n`%s`", strconv.Quote(exp), strconv.Quote(f.String()))
+	}
+}
+
 func TestWriter_Close(t *testing.T) {
 	t.Parallel()
 
 	f := &Writer{
 		Padding:    6,
 		lineLen:    1,
-		ansiWriter: &ansi.Writer{Forward: fakeWriter{}},
+		ansiWriter: ansi.Writer{Forward: fakeWriter{}},
 	}
 
 	if err := f.Close(); err != fakeErr {
@@ -201,7 +273,7 @@ func TestWriter_Error(t *testing.T) {
 
 	f := &Writer{
 		Padding:    6,
-		ansiWriter: &ansi.Writer{Forward: fakeWriter{}},
+		ansiWriter: ansi.Writer{Forward: fakeWriter{}},
 	}
 
 	if _, err := f.Write([]byte("foo\n")); err != fakeErr {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"strconv"
 	"testing"
 
 	"github.com/muesli/reflow/ansi"
@@ -35,10 +36,16 @@ func TestIndent(t *testing.T) {
 			"    foo\n    bar",
 			4,
 		},
-		// ANSI sequence codes:
+		// ANSI color sequence codes:
 		{
 			"\x1B[38;2;249;38;114mfoo",
 			"\x1B[38;2;249;38;114m\x1B[0m    \x1B[38;2;249;38;114mfoo",
+			4,
+		},
+		// XTerm Links
+		{
+			"\x1B]8;;https://gith\nub.com\x07foo",
+			"\x1B]8;;https://gith\nub.com\x07\x1B]8;;\x1b\\    \x1B]8;;https://gith\nub.com\x1b\\foo",
 			4,
 		},
 	}
@@ -52,7 +59,7 @@ func TestIndent(t *testing.T) {
 		}
 
 		if f.String() != tc.Expected {
-			t.Errorf("Test %d, expected:\n\n`%s`\n\nActual Output:\n\n`%s`", i, tc.Expected, f.String())
+			t.Errorf("Test %d, expected:\n\n`%s`\n\nActual Output:\n\n`%s`", i, strconv.Quote(tc.Expected), strconv.Quote(f.String()))
 		}
 	}
 }

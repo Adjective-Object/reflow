@@ -90,10 +90,17 @@ func TestWriter_ResetAnsi(t *testing.T) {
 		t.Fatalf("b should be empty, but got %s", s)
 	}
 
-	w.seqchanged = true
+	// set the buffer to red,
+	// then reset the testing buffer so we are just asserting against
+	// the ResetAnsi() outputs in isolation
+	w.Write([]byte(
+		"\x1B[38;114m",
+	))
+	b.Reset()
 
+	// reset the color
 	w.ResetAnsi()
-
+	// check that both the color-set + color reset sequences were written
 	if s := b.String(); s != "\x1b[0m" {
 		t.Fatalf("b.String() should be \"\\x1b[0m\", got %s", s)
 	}
@@ -104,12 +111,14 @@ func TestWriter_RestoreAnsi(t *testing.T) {
 
 	b := &bytes.Buffer{}
 
-	lastseq := bytes.Buffer{}
-	lastseq.WriteString("\x1B[38;2;249;38;114m")
-	w := &Writer{Forward: b, lastseq: lastseq}
+	// Write a color sequence,
+	// then reset the testing buffer so we are just asserting against
+	// the RestoreAnsi() outputs in isolation
+	w := &Writer{Forward: b}
+	w.WriteString("\x1B[38;2;249;38;114m")
+	b.Reset()
 
 	w.RestoreAnsi()
-
 	if s := b.String(); s != "\x1B[38;2;249;38;114m" {
 		t.Fatalf("b.String() should be \"\\x1B[38;2;249;38;114m\", got %s", s)
 	}

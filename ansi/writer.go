@@ -1,81 +1,68 @@
 package ansi
 
 import (
-	"bytes"
 	"io"
 	"unicode/utf8"
+
+	"github.com/muesli/reflow/internal/statemachine"
 )
 
 type Writer struct {
 	Forward io.Writer
 
-	ansi       bool
-	ansiseq    bytes.Buffer
-	lastseq    bytes.Buffer
-	seqchanged bool
-	runeBuf    [4]byte
+	state   statemachine.AnsiState
+	runeBuf [4]byte
 }
 
 // Write is used to write content to the ANSI buffer.
 func (w *Writer) Write(b []byte) (int, error) {
-	for i, c := range string(b) {
-		if err := w.WriteRune(c); err != nil {
+	for i, c := range b {
+		if err := w.WriteByte(c); err != nil {
 			return i, err
 		}
 	}
 	return len(b), nil
 }
 
-// Write is used to write content to the ANSI buffer.
-func (w *Writer) WriteRune(c rune) error {
-	if c == Marker {
-		// ANSI escape sequence
-		w.ansi = true
-		w.seqchanged = true
-		_, _ = w.ansiseq.WriteRune(c)
-	} else if w.ansi {
-		_, _ = w.ansiseq.WriteRune(c)
-		if IsTerminator(c) {
-			// ANSI sequence terminated
-			w.ansi = false
-
-			if bytes.HasSuffix(w.ansiseq.Bytes(), []byte("[0m")) {
-				// reset sequence
-				w.lastseq.Reset()
-				w.seqchanged = false
-			} else if c == 'm' {
-				// color code
-				_, _ = w.lastseq.Write(w.ansiseq.Bytes())
-			}
-
-			_, _ = w.ansiseq.WriteTo(w.Forward)
+// WriteString is used to write content to the ANSI buffer.
+func (w *Writer) WriteString(s string) (int, error) {
+	for i := 0; i < len(s); i++ {
+		if err := w.WriteByte(s[i]); err != nil {
+			return i, err
 		}
-	} else {
-		_, err := w.writeRune(c)
-		if err != nil {
+	}
+	return len(s), nil
+}
+
+// WriteRune is used to write content to the ANSI buffer.
+func (w *Writer) WriteRune(r rune) error {
+	n := utf8.EncodeRune(w.runeBuf[:], r)
+	for i := 0; i < n; i++ {
+		if err := w.WriteByte(w.runeBuf[i]); err != nil {
 			return err
 		}
 	}
-
 	return nil
 }
 
-func (w *Writer) writeRune(r rune) (int, error) {
-	n := utf8.EncodeRune(w.runeBuf[:], r)
-	return w.Forward.Write(w.runeBuf[:n])
+// WriteByte is used to write content to the ANSI buffer.
+func (w *Writer) WriteByte(b byte) error {
+	w.state.Next(b)
+	_, err := w.Forward.Write([]byte{b})
+	return err
 }
 
 func (w *Writer) LastSequence() string {
-	return w.lastseq.String()
+	return string(w.state.ResetSequence())
 }
 
 func (w *Writer) ResetAnsi() {
-	if !w.seqchanged {
+	if !w.state.IsDirty() {
 		return
 	}
-	_, _ = w.Forward.Write([]byte("\x1b[0m"))
+	_, _ = w.Forward.Write(w.state.ResetSequence())
 }
 
 func (w *Writer) RestoreAnsi() {
-	_, _ = w.Forward.Write(w.lastseq.Bytes())
+	_, _ = w.Forward.Write(w.state.RestoreSequence())
 }

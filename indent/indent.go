@@ -6,6 +6,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/muesli/reflow/ansi"
+	"github.com/muesli/reflow/internal/statemachine"
 )
 
 type IndentFunc func(w io.Writer)
@@ -14,10 +15,11 @@ type Writer struct {
 	Indent     uint
 	IndentFunc IndentFunc
 
-	ansiWriter ansi.Writer
-	buf        bytes.Buffer
-	skipIndent bool
-	ansi       bool
+	stateMachine statemachine.StateMachine
+	ansiWriter   ansi.Writer
+	buf          bytes.Buffer
+	skipIndent   bool
+	ansi         bool
 }
 
 func NewWriter(indent uint, indentFunc IndentFunc) *Writer {
@@ -88,11 +90,12 @@ func (w *Writer) Write(b []byte) (int, error) {
 	// iterate runes without copying the byte array onto the heap
 	for i < len(b) {
 		c, charWidth := utf8.DecodeRune(b[i:])
-		i += charWidth
-
-		if err := w.WriteRune(c); err != nil {
+		nextI := i + charWidth
+		if err := w.writeRuneBytes(c, b[i:nextI]); err != nil {
 			return i, err
 		}
+
+		i = nextI
 	}
 
 	return len(b), nil
@@ -102,8 +105,18 @@ func (w *Writer) Write(b []byte) (int, error) {
 func (w *Writer) WriteString(s string) (int, error) {
 	// iterate runewise without reallocating
 	// iterate runes without copying the byte array onto the heap
+	bi := 0
+	runeBytes := [4]byte{}
 	for i, c := range s {
-		if err := w.WriteRune(c); err != nil {
+		// copy bytes from the string into an on-stack byte array
+		diff := i - bi
+		for j := 0; j < diff; j++ {
+			runeBytes[j] = s[bi]
+			bi++
+		}
+
+		// write the rune to the buffer
+		if err := w.writeRuneBytes(c, runeBytes[0:diff]); err != nil {
 			return i, err
 		}
 	}
@@ -111,16 +124,14 @@ func (w *Writer) WriteString(s string) (int, error) {
 	return len(s), nil
 }
 
-func (w *Writer) WriteRune(c rune) error {
-	if c == '\x1B' {
-		// ANSI escape sequence
-		w.ansi = true
-	} else if w.ansi {
-		if (c >= 0x41 && c <= 0x5a) || (c >= 0x61 && c <= 0x7a) {
-			// ANSI sequence terminated
-			w.ansi = false
-		}
-	} else {
+func (w *Writer) writeRuneBytes(c rune, b []byte) error {
+
+	var step statemachine.StateTransition
+	for i := 0; i < len(b); i++ {
+		step = w.stateMachine.Next(b[i])
+	}
+
+	if step.IsPrinting() {
 		if !w.skipIndent {
 			w.ansiWriter.ResetAnsi()
 			if w.IndentFunc != nil {

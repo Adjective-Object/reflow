@@ -93,7 +93,7 @@ func (w *Writer) Write(b []byte) (int, error) {
 	w.width -= uint(tw)
 	var curWidth uint
 
-	collector := statemachine.CommandCollector{}
+	ansiState := statemachine.AnsiState{}
 
 	isTruncating := false
 
@@ -101,7 +101,6 @@ func (w *Writer) Write(b []byte) (int, error) {
 	// will automatically add a reset color sequence to the end
 	// of any truncated sequence that contains a color sequence,
 	// that is not already reset
-	needsColorReset := false
 	i := 0
 	// iterate runes without copying the byte array onto the heap
 	for i < len(b) {
@@ -110,25 +109,13 @@ func (w *Writer) Write(b []byte) (int, error) {
 		var step statemachine.CollectorStep
 		nextI := i + charWidth
 		for j := i; j < nextI; j++ {
-			step = collector.Next(b[j])
+			step = ansiState.Next(b[j])
 		}
 
 		// if we're in a non-printing sequence, don't count the width of this character
 		isPrinting := step.IsPrinting()
 		if isPrinting {
 			curWidth += uint(runewidth.RuneWidth(curChar))
-		}
-
-		// check if we just stepped a command
-		if step.Command.Type == statemachine.TypeCSICommand {
-			if bytes.Equal(step.Command.CommandId, []byte{'0', 'm'}) {
-				// Reset color sequence
-				needsColorReset = false
-			} else if bytes.HasSuffix(step.Command.CommandId, []byte{'m'}) {
-				// Some non-reset color sequence -- we may need to reset
-				// at the end of the sequence
-				needsColorReset = true
-			}
 		}
 
 		// once we hit the max width, start truncating
@@ -155,9 +142,9 @@ func (w *Writer) Write(b []byte) (int, error) {
 		i = nextI
 	}
 
-	if isTruncating && needsColorReset {
-		// Append a color reset sequence
-		n, err := w.writeBuffer([]byte("\x1b[0m"))
+	if isTruncating && ansiState.IsDirty() {
+		// Append a reset sequence
+		n, err := w.writeBuffer(ansiState.ResetSequence())
 		return len(b) + n, err
 	}
 	return len(b), nil

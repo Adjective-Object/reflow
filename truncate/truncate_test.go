@@ -114,6 +114,13 @@ func TestTruncate(t *testing.T) {
 			"\x1B[38;5;219mHiya!",
 			"\x1B[38;5;219mHi…\x1B[0m",
 		},
+		// Injects reset sequence for unterminated link sequences
+		{
+			3,
+			"…",
+			"\x1B]8;;https://github.com\x07Hiya!",
+			"\x1B]8;;https://github.com\x07Hi…\x1B]8;;\x1b\\",
+		},
 	}
 
 	for i, tc := range tt {
@@ -166,7 +173,9 @@ func TestTruncateXtermLink(t *testing.T) {
 	actual := Bytes([]byte("click on \x1b]8;;https://example.com\x07\\linktext\x1b]8;;\x1b\\"), 12)
 	expected := []byte("click on \x1b]8;;https://example.com\x07\\li\x1b]8;;\x1b\\")
 	if !bytes.Equal(actual, expected) {
-		t.Errorf("expected:\n\n`%s`\n\nActual Output:\n\n`%s`", expected, actual)
+		t.Errorf("expected:\n\n`%s`\n\nActual Output:\n\n`%s`",
+			strconv.Quote(string(expected)),
+			strconv.Quote(string(actual)))
 	}
 }
 

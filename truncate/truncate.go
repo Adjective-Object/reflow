@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"io"
 
-	"strings"
-
 	"github.com/mattn/go-runewidth"
 	"github.com/muesli/reflow/ansi"
 	"github.com/muesli/reflow/internal/statemachine"
@@ -104,12 +102,10 @@ func (w *Writer) Write(b []byte) (int, error) {
 
 		// check if we just stepped a command
 		if step.Command.Type == statemachine.TypeCSICommand {
-			if step.Command.CommandId == "0m" {
+			if bytes.Equal(step.Command.CommandId, []byte{'0', 'm'}) {
 				// Reset color sequence
 				needsColorReset = false
-			} else if strings.HasSuffix(
-				step.Command.CommandId, "m",
-			) {
+			} else if bytes.HasSuffix(step.Command.CommandId, []byte{'m'}) {
 				// Some non-reset color sequence -- we may need to reset
 				// at the end of the sequence
 				needsColorReset = true

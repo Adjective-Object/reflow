@@ -8,12 +8,17 @@ const (
 	// not in any ansi escape sequence
 	nonAnsi State = iota
 
+	// unrecognized state
+	unknown
+
 	// special state: we have seen \x1b and are looking for
 	// the following characters to recognize the escape sequence
 	//
 	// If we see a valid terminator, we will transition to either
 	// oscCommandID or csiCommand
 	gatheringEscapeSequence
+
+	// payload states go below here:
 
 	// Collecting the ID of the OSC command
 	// e.g. for xterm "link", this will be the "8" in
@@ -23,9 +28,6 @@ const (
 
 	// we are in a CSI command
 	csiCommand
-
-	// unrecognized state
-	unknown
 )
 
 func (s State) String() string {
@@ -50,24 +52,12 @@ func (s State) String() string {
 //
 // See: CommandCollector
 func (s State) HasPayload() bool {
-	switch s {
-	case oscCommandID, oscParameter, csiCommand:
-		return true
-	default:
-		return false
-	}
+	return s >= oscCommandID
 }
 
 // True if this state is printing text
 func (s State) IsPrinting() bool {
-	switch s {
-	case nonAnsi:
-		return true
-	case oscCommandID, gatheringEscapeSequence, oscParameter, csiCommand:
-		return false
-	default:
-		return false
-	}
+	return s == nonAnsi
 }
 
 // Gets the next state for the given byte

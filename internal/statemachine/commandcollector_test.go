@@ -1,6 +1,7 @@
 package statemachine
 
 import (
+	"bytes"
 	"fmt"
 	"strconv"
 	"strings"
@@ -21,7 +22,7 @@ func (s commandStepperTestCaseStep) Compare(other commandStepperTestCaseStep) bo
 		return false
 	}
 
-	if s.command.CommandId != other.command.CommandId {
+	if !bytes.Equal(s.command.CommandId, other.command.CommandId) {
 		return false
 	}
 
@@ -30,7 +31,7 @@ func (s commandStepperTestCaseStep) Compare(other commandStepperTestCaseStep) bo
 	}
 
 	for i, param := range s.command.Params {
-		if param != other.command.Params[i] {
+		if !bytes.Equal(param, other.command.Params[i]) {
 			return false
 		}
 	}
@@ -129,7 +130,7 @@ func TestCollectCSICommand(t *testing.T) {
 				inputByte: 'm',
 				command: Command{
 					Type:      TypeCSICommand,
-					CommandId: "0m",
+					CommandId: []byte("0m"),
 				},
 			},
 		},
@@ -177,8 +178,8 @@ func TestCollectOSCCommand(t *testing.T) {
 					inputByte: '\x07',
 					command: Command{
 						Type:      TypeOSCCommand,
-						CommandId: "8",
-						Params:    []string{"foo", "bar"},
+						CommandId: []byte("8"),
+						Params:    [][]byte{[]byte("foo"), []byte("bar")},
 					},
 				},
 			},
@@ -225,8 +226,8 @@ func TestCollectOSCCommand(t *testing.T) {
 					inputByte: '\\',
 					command: Command{
 						Type:      TypeOSCCommand,
-						CommandId: "8",
-						Params:    []string{"foo", "bar"},
+						CommandId: []byte("8"),
+						Params:    [][]byte{[]byte("foo"), []byte("bar")},
 					},
 				},
 			},

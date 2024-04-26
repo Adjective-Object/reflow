@@ -14,12 +14,12 @@ type Command struct {
 	// The command ID.
 	// For OSC commands, this is the command number.
 	// For CSI commands, this is the full body of the command
-	CommandId string
+	CommandId []byte
 	// For OSC commands, this is the parameters to the command,
 	// separated by semicolons.
 	//
 	// For CSI commands, this will always be `nil`
-	Params []string
+	Params [][]byte
 }
 
 // CommandCollector is used to collect ANSI commands
@@ -49,15 +49,15 @@ func (collector *CommandCollector) Next(b byte) CollectorStep {
 		switch step.PreviousState {
 		case oscCommandID:
 			collector.buildingCommand.Type = TypeOSCCommand
-			collector.buildingCommand.CommandId = string(collector.currentPayload)
+			collector.buildingCommand.CommandId = collector.currentPayload
 			collector.currentPayload = nil
 		case csiCommand:
 			collector.currentPayload = append(collector.currentPayload, b)
 			collector.buildingCommand.Type = TypeCSICommand
-			collector.buildingCommand.CommandId = string(collector.currentPayload)
+			collector.buildingCommand.CommandId = collector.currentPayload
 			collector.currentPayload = nil
 		case oscParameter:
-			collector.buildingCommand.Params = append(collector.buildingCommand.Params, string(collector.currentPayload))
+			collector.buildingCommand.Params = append(collector.buildingCommand.Params, collector.currentPayload)
 			collector.currentPayload = nil
 		}
 
@@ -70,7 +70,7 @@ func (collector *CommandCollector) Next(b byte) CollectorStep {
 		}
 	} else if step.NextState == oscParameter && b == ':' {
 		// if we're in oscParameter and we hit a colon, we're about to start a new parameter
-		collector.buildingCommand.Params = append(collector.buildingCommand.Params, string(collector.currentPayload))
+		collector.buildingCommand.Params = append(collector.buildingCommand.Params, collector.currentPayload)
 		collector.currentPayload = nil
 	} else {
 		if step.NextState.HasPayload() {

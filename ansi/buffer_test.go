@@ -3,6 +3,8 @@ package ansi
 import (
 	"bytes"
 	"testing"
+
+	"github.com/mattn/go-runewidth"
 )
 
 func TestBuffer_PrintableRuneWidth(t *testing.T) {
@@ -14,6 +16,23 @@ func TestBuffer_PrintableRuneWidth(t *testing.T) {
 
 	if n := b.PrintableRuneWidth(); n != 3 {
 		t.Fatalf("width should be 3, got %d", n)
+	}
+}
+
+func TestBuffer_PrintableRuneWidth_MultiByte(t *testing.T) {
+	t.Parallel()
+
+	var bb bytes.Buffer
+	bb.WriteString("ユニコードが好きです\x1B[38;2;249;38;114m")
+	b := Buffer{bb}
+
+	expected := 0
+	for _, r := range "ユニコードが好きです" {
+		expected += runewidth.RuneWidth(r)
+	}
+
+	if n := b.PrintableRuneWidth(); n != expected {
+		t.Fatalf("width should be %d, got %d", expected, n)
 	}
 }
 

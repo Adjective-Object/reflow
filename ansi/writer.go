@@ -13,50 +13,55 @@ type Writer struct {
 	ansiseq    bytes.Buffer
 	lastseq    bytes.Buffer
 	seqchanged bool
-	runeBuf    []byte
+	runeBuf    [4]byte
 }
 
 // Write is used to write content to the ANSI buffer.
 func (w *Writer) Write(b []byte) (int, error) {
-	for _, c := range string(b) {
-		if c == Marker {
-			// ANSI escape sequence
-			w.ansi = true
-			w.seqchanged = true
-			_, _ = w.ansiseq.WriteRune(c)
-		} else if w.ansi {
-			_, _ = w.ansiseq.WriteRune(c)
-			if IsTerminator(c) {
-				// ANSI sequence terminated
-				w.ansi = false
-
-				if bytes.HasSuffix(w.ansiseq.Bytes(), []byte("[0m")) {
-					// reset sequence
-					w.lastseq.Reset()
-					w.seqchanged = false
-				} else if c == 'm' {
-					// color code
-					_, _ = w.lastseq.Write(w.ansiseq.Bytes())
-				}
-
-				_, _ = w.ansiseq.WriteTo(w.Forward)
-			}
-		} else {
-			_, err := w.writeRune(c)
-			if err != nil {
-				return 0, err
-			}
+	for i, c := range string(b) {
+		if err := w.WriteRune(c); err != nil {
+			return i, err
 		}
 	}
-
 	return len(b), nil
 }
 
-func (w *Writer) writeRune(r rune) (int, error) {
-	if w.runeBuf == nil {
-		w.runeBuf = make([]byte, utf8.UTFMax)
+// Write is used to write content to the ANSI buffer.
+func (w *Writer) WriteRune(c rune) error {
+	if c == Marker {
+		// ANSI escape sequence
+		w.ansi = true
+		w.seqchanged = true
+		_, _ = w.ansiseq.WriteRune(c)
+	} else if w.ansi {
+		_, _ = w.ansiseq.WriteRune(c)
+		if IsTerminator(c) {
+			// ANSI sequence terminated
+			w.ansi = false
+
+			if bytes.HasSuffix(w.ansiseq.Bytes(), []byte("[0m")) {
+				// reset sequence
+				w.lastseq.Reset()
+				w.seqchanged = false
+			} else if c == 'm' {
+				// color code
+				_, _ = w.lastseq.Write(w.ansiseq.Bytes())
+			}
+
+			_, _ = w.ansiseq.WriteTo(w.Forward)
+		}
+	} else {
+		_, err := w.writeRune(c)
+		if err != nil {
+			return err
+		}
 	}
-	n := utf8.EncodeRune(w.runeBuf, r)
+
+	return nil
+}
+
+func (w *Writer) writeRune(r rune) (int, error) {
+	n := utf8.EncodeRune(w.runeBuf[:], r)
 	return w.Forward.Write(w.runeBuf[:n])
 }
 

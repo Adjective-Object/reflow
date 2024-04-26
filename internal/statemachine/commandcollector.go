@@ -44,7 +44,7 @@ func (collector *CommandCollector) Next(b byte) CollectorStep {
 		StateTransition: collector.stepper.Next(b),
 	}
 
-	if step.IsChange {
+	if step.IsChange() {
 		// build the right param of the command
 		switch step.PreviousState {
 		case oscCommandID:

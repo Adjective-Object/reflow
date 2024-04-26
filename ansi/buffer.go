@@ -24,30 +24,34 @@ func (w Buffer) PrintableRuneWidth() int {
 func PrintableRuneWidth(s string) int {
 	var n int
 	stateMachine := statemachine.StateMachine{}
-	for i := 0; i < len(s); i++ {
-		var state statemachine.StateTransition
-		if b := s[i]; b <= unicode.MaxASCII && b > 0x20 {
+	i := 0
+	for i < len(s) {
+		var stateTrans statemachine.StateTransition
+		var b = s[i]
+		if b <= unicode.MaxASCII && b > 0x20 {
 			// short-circuit for printable ASCII characters (most characters)
-			state = stateMachine.Next(b)
+			stateTrans = stateMachine.Next(b)
 			// all ASCII characters are 1 character wide
-			if state.IsPrinting() {
+			if stateTrans.IsPrinting() {
 				n += 1
 			}
+			i++
 		} else {
 			// collect the rune
 			r, size := utf8.DecodeRuneInString(s[i:])
-			j := i + size - 1
+			j := i + size
 			// advance state by each byte
 			for {
 				// postcondition loop for performance
-				state = stateMachine.Next(s[i])
+				stateTrans = stateMachine.Next(s[i])
+				i++
 				if i >= j {
 					break
 				}
-				i++
 			}
 			// if we are in a printable state, count the rune width
-			if state.IsPrinting() {
+			// of the multibyte character
+			if stateTrans.IsPrinting() {
 				n += runewidth.RuneWidth(r)
 			}
 		}

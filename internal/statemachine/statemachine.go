@@ -28,6 +28,8 @@ const (
 
 	// we are in a CSI command
 	csiCommand
+
+	maxState
 )
 
 func (s State) String() string {
@@ -61,23 +63,45 @@ func (s State) IsPrinting() bool {
 }
 
 // Gets the next state for the given byte
-func (s State) Step(b byte) (State, bool) {
+func (s State) Step(b byte) State {
 	switch s {
+	case nonAnsi:
+		// if we are in normal text and see the ansi marker, start
+		// trying to gather the escape sequence
+		if b == Marker {
+			return gatheringEscapeSequence
+		}
 	case oscCommandID, oscParameter:
 		if b == ';' {
-			return oscParameter, true
+			return oscParameter
 		}
 		// See https://en.wikipedia.org/wiki/ANSI_escape_code#OSC_(Operating_System_Command)_sequences
 		// OSC sequences can be terminated by a BEL character or a ST character
 		if b == '\x07' || b == '\\' {
-			return nonAnsi, true
+			return nonAnsi
+		}
+	case gatheringEscapeSequence:
+		// if this was a terminator, abort sequence recognition;
+		// no sequences should contain a sequence-terminating character
+		if IsTerminatorByte(b) {
+			return nonAnsi
+		}
+
+		switch b {
+		case ']':
+			return oscCommandID
+		case '[':
+			return csiCommand
+		default:
+			// we are in an unknown sequence
+			return unknown
 		}
 	default:
 		if IsTerminatorByte(b) {
-			return nonAnsi, true
+			return nonAnsi
 		}
 	}
-	return s, false
+	return s
 }
 
 // StateMachine is used to step through ANSI escape sequences.
@@ -92,15 +116,15 @@ type StateMachine struct {
 type StateTransition struct {
 	PreviousState State
 	NextState     State
-	IsChange      bool
+}
+
+func (s StateTransition) IsChange() bool {
+	return s.PreviousState != s.NextState
 }
 
 // String representation of the transition, for debug purposes
 func (s StateTransition) String() string {
-	if s.IsChange {
-		return s.PreviousState.String() + " -> " + s.NextState.String()
-	}
-	return s.PreviousState.String() + " <no change>"
+	return s.PreviousState.String() + " -> " + s.NextState.String()
 }
 
 // If the character that triggered this transition should be printed
@@ -113,7 +137,6 @@ func (s *StateMachine) changeState(next State) StateTransition {
 	step := StateTransition{
 		PreviousState: s.state,
 		NextState:     next,
-		IsChange:      true,
 	}
 	s.state = next
 	return step
@@ -121,36 +144,5 @@ func (s *StateMachine) changeState(next State) StateTransition {
 
 // Advances the state machine by one byte
 func (s *StateMachine) Next(b byte) StateTransition {
-	switch s.state {
-	case nonAnsi:
-		// if we are in normal text and see the ansi marker, start
-		// trying to gather the escape sequence
-		if b == Marker {
-			return s.changeState(gatheringEscapeSequence)
-		}
-	case gatheringEscapeSequence:
-		// if this was a terminator, abort sequence recognition;
-		// no sequences should contain a sequence-terminating character
-		if IsTerminatorByte(b) {
-			return s.changeState(nonAnsi)
-		}
-
-		switch b {
-		case ']':
-			return s.changeState(oscCommandID)
-		case '[':
-			return s.changeState(csiCommand)
-		default:
-			// we are in an unknown sequence
-			s.state = unknown
-			return StateTransition{s.state, s.state, false}
-		}
-	default:
-		// once we have a state, let it handle the byte
-		nextState, isTransition := s.state.Step(b)
-		if isTransition {
-			return s.changeState(nextState)
-		}
-	}
-	return StateTransition{s.state, s.state, false}
+	return s.changeState(s.state.Step(b))
 }

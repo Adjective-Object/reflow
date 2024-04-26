@@ -36,6 +36,21 @@ func TestBuffer_PrintableRuneWidth_MultiByte(t *testing.T) {
 	}
 }
 
+// Validate that PrintableRuneWidthBytes and PrintableRuneWidth return the same result
+func FuzzPrintableRuneWidth(f *testing.F) {
+	f.Add("foo")
+	f.Add("foo\x1B[38;2;249;38;114m")
+	f.Add("foo\x1B[38;2;249;38;114mbar")
+	f.Add("foo\x1B[38;2;249;38;114mbar\x1B[0m")
+	f.Add("foo\x1B[38;2;249;38;114mbar\x1B[0m\x1B[38;2;249;38;114m")
+	f.Add("foo\x1B[38;2;249;38;114mbar\x1B[0m\x1B[38;2;249;38;114m\x1B[0m")
+	f.Fuzz(func(t *testing.T, s string) {
+		if PrintableRuneWidth(s) != PrintableRuneWidthBytes([]byte(s)) {
+			t.Error("PrintableRuneWidth and PrintableRuneWidthBytes should return the same result")
+		}
+	})
+}
+
 func TestBuffer_PrintableRuneWidth_XTerm(t *testing.T) {
 	t.Parallel()
 

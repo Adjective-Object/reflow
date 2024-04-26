@@ -3,6 +3,7 @@ package truncate
 import (
 	"bytes"
 	"io"
+	"unicode/utf8"
 
 	"github.com/mattn/go-runewidth"
 	"github.com/muesli/reflow/ansi"
@@ -11,22 +12,40 @@ import (
 
 type Writer struct {
 	width uint
-	tail  string
+	tail  []byte
 
 	writer io.Writer
 	buf    bytes.Buffer
 }
 
-func NewWriter(width uint, tail string) *Writer {
-	w := &Writer{
+func makeWriter(width uint, tail []byte) Writer {
+	w := Writer{
 		width: width,
 		tail:  tail,
 	}
-	w.writer = &w.buf
+	w.buf.Grow(int(width) + 1)
 	return w
 }
 
+func NewWriterBytes(width uint, tail []byte) *Writer {
+	m := makeWriter(width, tail)
+	return &m
+}
+
+func NewWriter(width uint, tail string) *Writer {
+	m := makeWriter(width, []byte(tail))
+	return &m
+}
+
 func NewWriterPipe(forward io.Writer, width uint, tail string) *Writer {
+	return &Writer{
+		width:  width,
+		tail:   []byte(tail),
+		writer: forward,
+	}
+}
+
+func NewWriterPipeBytes(forward io.Writer, width uint, tail []byte) *Writer {
 	return &Writer{
 		width:  width,
 		tail:   tail,
@@ -44,7 +63,7 @@ func Bytes(b []byte, width uint) []byte {
 // used to immediately truncate a byte slice. A tail is then added to the
 // end of the byte slice.
 func BytesWithTail(b []byte, width uint, tail []byte) []byte {
-	f := NewWriter(width, string(tail))
+	f := makeWriter(width, tail)
 	_, _ = f.Write(b)
 
 	return f.Bytes()
@@ -53,7 +72,7 @@ func BytesWithTail(b []byte, width uint, tail []byte) []byte {
 // String is shorthand for declaring a new default truncate-writer instance,
 // used to immediately truncate a string.
 func String(s string, width uint) string {
-	return StringWithTail(s, width, "")
+	return string(BytesWithTail([]byte(s), width, nil))
 }
 
 // StringWithTail is shorthand for declaring a new default truncate-writer instance,
@@ -66,18 +85,15 @@ func StringWithTail(s string, width uint, tail string) string {
 // Write truncates content at the given printable cell width, leaving any
 // ansi sequences intact.
 func (w *Writer) Write(b []byte) (int, error) {
-	tw := ansi.PrintableRuneWidth(w.tail)
+	tw := ansi.PrintableRuneWidthBytes(w.tail)
 	if w.width < uint(tw) {
-		return w.buf.WriteString(w.tail)
+		return w.buf.Write(w.tail)
 	}
 
 	w.width -= uint(tw)
 	var curWidth uint
 
 	collector := statemachine.CommandCollector{}
-
-	bi := 0
-	s := string(b)
 
 	isTruncating := false
 
@@ -86,18 +102,21 @@ func (w *Writer) Write(b []byte) (int, error) {
 	// of any truncated sequence that contains a color sequence,
 	// that is not already reset
 	needsColorReset := false
-
-	for i, c := range s {
+	i := 0
+	// iterate runes without copying the byte array onto the heap
+	for i < len(b) {
+		curChar, charWidth := utf8.DecodeRune(b[i:])
 		// consume all the bytes of this character in the statemachine
 		var step statemachine.CollectorStep
-		for ; bi <= i; bi++ {
-			step = collector.Next(s[bi])
+		nextI := i + charWidth
+		for j := i; j < nextI; j++ {
+			step = collector.Next(b[j])
 		}
 
 		// if we're in a non-printing sequence, don't count the width of this character
 		isPrinting := step.IsPrinting()
 		if isPrinting {
-			curWidth += uint(runewidth.RuneWidth(c))
+			curWidth += uint(runewidth.RuneWidth(curChar))
 		}
 
 		// check if we just stepped a command
@@ -115,7 +134,7 @@ func (w *Writer) Write(b []byte) (int, error) {
 		// once we hit the max width, start truncating
 		if !isTruncating && curWidth > w.width {
 			// when we start truncating, write the tail
-			n, err := w.writer.Write([]byte(w.tail))
+			n, err := w.writeBuffer(w.tail)
 			if err != nil {
 				return i + n, err
 			}
@@ -125,19 +144,30 @@ func (w *Writer) Write(b []byte) (int, error) {
 		// when we start truncating, only write non-printable
 		// characters to the buffer.
 		if !isPrinting || !isTruncating {
-			_, err := w.writer.Write([]byte(string(c)))
+			// write the full character to the buffer
+			n, err := w.writeBuffer(b[i:nextI])
 			if err != nil {
-				return 0, err
+				return i + n, err
 			}
 		}
+
+		// advance the index by the number of bytes in the character
+		i = nextI
 	}
 
 	if isTruncating && needsColorReset {
 		// Append a color reset sequence
-		n, err := w.writer.Write([]byte("\x1b[0m"))
+		n, err := w.writeBuffer([]byte("\x1b[0m"))
 		return len(b) + n, err
 	}
 	return len(b), nil
+}
+
+func (w *Writer) writeBuffer(b []byte) (int, error) {
+	if w.writer != nil {
+		return w.writer.Write(b)
+	}
+	return w.buf.Write(b)
 }
 
 // Bytes returns the truncated result as a byte slice.

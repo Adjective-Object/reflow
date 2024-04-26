@@ -3,6 +3,7 @@ package truncate
 import (
 	"bytes"
 	"errors"
+	"strconv"
 	"testing"
 )
 
@@ -135,7 +136,7 @@ func TestTruncateString(t *testing.T) {
 	actual := String("foobar", 3)
 	expected := "foo"
 	if actual != expected {
-		t.Errorf("expected:\n\n`%s`\n\nActual Output:\n\n`%s`", expected, actual)
+		t.Errorf("expected:\n\n`%s`\n\nActual Output:\n\n`%s`", strconv.Quote(expected), strconv.Quote(actual))
 	}
 }
 
@@ -183,7 +184,7 @@ func TestNewWriterPipe(t *testing.T) {
 	expected := "fo"
 
 	if actual != expected {
-		t.Errorf("expected:\n\n`%s`\n\nActual Output:\n\n`%s`", expected, actual)
+		t.Errorf("expected:\n\n`%s`\n\nActual Output:\n\n`%s`", strconv.Quote(expected), strconv.Quote(actual))
 	}
 }
 

@@ -24,7 +24,8 @@ const (
 	// e.g. for xterm "link", this will be the "8" in
 	// \x1b]8;;http://example.com\x07
 	oscCommandID
-	oscParameter // a parameter to an OSC command
+	oscParameter    // a parameter to an OSC command
+	oscParameterx1B // a parameter to an OSC command, except the last character was 0x1B
 
 	// we are in a CSI command
 	csiCommand
@@ -41,7 +42,9 @@ func (s State) String() string {
 	case oscCommandID:
 		return "oSCCommandId"
 	case oscParameter:
-		return "oSCParam"
+		return "oscParameter"
+	case oscParameterx1B:
+		return "oscParameterx1B"
 	case csiCommand:
 		return "cSICommand"
 	default:
@@ -93,9 +96,20 @@ func (s State) Step(b byte) State {
 		}
 		// See https://en.wikipedia.org/wiki/ANSI_escape_code#OSC_(Operating_System_Command)_sequences
 		// OSC sequences can be terminated by a BEL character or a ST character
+		if b == '\x07' {
+			return nonAnsi
+		}
+		if b == '\x1b' {
+			return oscParameterx1B
+		}
+	case oscParameterx1B:
 		if b == '\x07' || b == '\\' {
 			return nonAnsi
 		}
+		if b == '\x1b' {
+			return oscParameterx1B
+		}
+		return oscParameter
 	default:
 		if IsTerminatorByte(b) {
 			return nonAnsi

@@ -47,6 +47,7 @@ func (collector *CommandCollector) Next(b byte) CollectorStep {
 	next := collector.stepper.state
 
 	if prev != next {
+		isEnteringNonAnsi := next == nonAnsi
 		// build the right param of the command
 		switch prev {
 		case oscCommandID:
@@ -59,18 +60,28 @@ func (collector *CommandCollector) Next(b byte) CollectorStep {
 			collector.buildingCommand.CommandId = collector.currentPayload
 			collector.currentPayload = nil
 		case oscParameter:
-			collector.buildingCommand.Params = append(collector.buildingCommand.Params, collector.currentPayload)
-			collector.currentPayload = nil
+			if isEnteringNonAnsi {
+				// if we just finished an oscParameter, aggregate the payload
+				collector.buildingCommand.Params = append(collector.buildingCommand.Params, collector.currentPayload)
+				collector.currentPayload = nil
+			}
+		case oscParameterx1B:
+			if isEnteringNonAnsi {
+				// if we just finished an oscParameter, aggregate the payload
+				collector.buildingCommand.Params = append(collector.buildingCommand.Params, collector.currentPayload)
+				collector.currentPayload = nil
+			} else {
+				collector.currentPayload = append(collector.currentPayload, '\x1b')
+				collector.currentPayload = append(collector.currentPayload, b)
+			}
 		}
 
 		// if we terminated a command, return it and clear the stored command
-		if next == nonAnsi {
-			if collector.buildingCommand.Type != 0 {
-				step.Command = collector.buildingCommand
-				collector.buildingCommand = Command{}
-			}
+		if isEnteringNonAnsi && collector.buildingCommand.Type != 0 {
+			step.Command = collector.buildingCommand
+			collector.buildingCommand = Command{}
 		}
-	} else if next == oscParameter && b == ':' {
+	} else if next == oscParameter && b == ';' {
 		// if we're in oscParameter and we hit a colon, we're about to start a new parameter
 		collector.buildingCommand.Params = append(collector.buildingCommand.Params, collector.currentPayload)
 		collector.currentPayload = nil

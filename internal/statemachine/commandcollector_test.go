@@ -44,7 +44,6 @@ func printCommandStepChars(steps []commandStepperTestCaseStep, b *strings.Builde
 		asStr := strconv.Quote(string(step.inputByte))
 		asStr = asStr[1 : len(asStr)-1]
 		b.WriteString(asStr)
-
 		for i := len(asStr); i < PAD_W; i++ {
 			b.WriteString(" ")
 		}
@@ -70,6 +69,7 @@ type commandStepperTestCase struct {
 }
 
 func runCommandStepperTest(t *testing.T, testCase commandStepperTestCase) {
+	t.Helper()
 	stepper := CommandCollector{}
 	realSteps := []commandStepperTestCaseStep{}
 
@@ -83,11 +83,13 @@ func runCommandStepperTest(t *testing.T, testCase commandStepperTestCase) {
 		t.Fatalf("mismatched input (%d) & expected output (%d) lengths", len(inputText), len(testCase.steps))
 	}
 
+	states := []State{}
 	mismatched := false
 	for i := 0; i < len(inputText); i++ {
 		step := stepper.Next(
 			inputText[i],
 		)
+		states = append(states, stepper.stepper.state)
 		testStep := commandStepperTestCaseStep{
 			inputByte: inputText[i],
 			command:   step.Command,
@@ -102,8 +104,13 @@ func runCommandStepperTest(t *testing.T, testCase commandStepperTestCase) {
 		err := strings.Builder{}
 		err.WriteString("\nchars: ")
 		printCommandStepChars(testCase.steps, &err)
-		err.WriteString("       ")
+		err.WriteString("\n       ")
 		printCommandStepChars(realSteps, &err)
+		err.WriteString("\nstates: ")
+		for _, state := range states {
+			err.WriteString(fmt.Sprintf("\n  %s", state))
+		}
+		err.WriteString("\n")
 
 		err.WriteString("commands:\n  ")
 		printCommandStepCommands(testCase.steps, &err)
@@ -163,7 +170,7 @@ func TestCollectOSCCommand(t *testing.T) {
 					inputByte: 'o',
 				},
 				{
-					inputByte: ':',
+					inputByte: ';',
 				},
 				{
 					inputByte: 'b',
@@ -186,7 +193,37 @@ func TestCollectOSCCommand(t *testing.T) {
 		})
 	})
 
-	t.Run("terminated with \\", func(t *testing.T) {
+	t.Run("no params", func(t *testing.T) {
+		runCommandStepperTest(t, commandStepperTestCase{
+			steps: []commandStepperTestCaseStep{
+				{
+					inputByte: '\x1b',
+				},
+				{
+					inputByte: ']',
+				},
+				{
+					inputByte: '8',
+				},
+				{
+					inputByte: ';',
+				},
+				{
+					inputByte: ';',
+				},
+				{
+					inputByte: '\x07',
+					command: Command{
+						Type:      TypeOSCCommand,
+						CommandId: []byte("8"),
+						Params:    [][]byte{nil, nil},
+					},
+				},
+			},
+		})
+	})
+
+	t.Run("terminated with \x1b\\", func(t *testing.T) {
 		runCommandStepperTest(t, commandStepperTestCase{
 			steps: []commandStepperTestCaseStep{
 				{
@@ -223,11 +260,68 @@ func TestCollectOSCCommand(t *testing.T) {
 					inputByte: 'r',
 				},
 				{
+					inputByte: ';',
+				},
+				{
+					inputByte: '\\',
+				},
+				{
+					inputByte: ';',
+				},
+				{
+					inputByte: '\x1b',
+				},
+				{
 					inputByte: '\\',
 					command: Command{
 						Type:      TypeOSCCommand,
 						CommandId: []byte("8"),
-						Params:    [][]byte{[]byte("foo"), []byte("bar")},
+						Params:    [][]byte{[]byte("foo:bar"), []byte("\\"), nil},
+					},
+				},
+			},
+		})
+	})
+
+	t.Run("aborted \x1b\\ seq", func(t *testing.T) {
+		runCommandStepperTest(t, commandStepperTestCase{
+			steps: []commandStepperTestCaseStep{
+				{
+					inputByte: '\x1b',
+				},
+				{
+					inputByte: ']',
+				},
+				{
+					inputByte: '8',
+				},
+				{
+					inputByte: ';',
+				},
+				{
+					inputByte: 'f',
+				},
+				{
+					inputByte: 'o',
+				},
+				{
+					inputByte: 'o',
+				},
+				{
+					inputByte: ';',
+				},
+				{
+					inputByte: '\x1b',
+				},
+				{
+					inputByte: 'a',
+				},
+				{
+					inputByte: '\x07',
+					command: Command{
+						Type:      TypeOSCCommand,
+						CommandId: []byte("8"),
+						Params:    [][]byte{[]byte("foo"), []byte("\x1ba")},
 					},
 				},
 			},

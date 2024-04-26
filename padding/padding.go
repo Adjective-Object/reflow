@@ -16,21 +16,17 @@ type Writer struct {
 	Padding uint
 	PadFunc PaddingFunc
 
-	stateMachine statemachine.StateMachine
-	ansiWriter   ansi.Writer
-	buf          bytes.Buffer
-	cache        bytes.Buffer
-	lineLen      int
-	ansi         bool
+	ansiState statemachine.AnsiState
+	buf       bytes.Buffer
+	cache     bytes.Buffer
+	lineLen   int
+	ansi      bool
 }
 
 func NewWriter(width uint, paddingFunc PaddingFunc) *Writer {
 	w := &Writer{
 		Padding: width,
 		PadFunc: paddingFunc,
-	}
-	w.ansiWriter = ansi.Writer{
-		Forward: &w.buf,
 	}
 	return w
 }
@@ -39,9 +35,6 @@ func NewWriterPipe(forward io.Writer, width uint, paddingFunc PaddingFunc) *Writ
 	return &Writer{
 		Padding: width,
 		PadFunc: paddingFunc,
-		ansiWriter: ansi.Writer{
-			Forward: forward,
-		},
 	}
 }
 
@@ -50,9 +43,6 @@ func NewWriterPipe(forward io.Writer, width uint, paddingFunc PaddingFunc) *Writ
 func Bytes(b []byte, width uint) []byte {
 	f := Writer{
 		Padding: width,
-	}
-	f.ansiWriter = ansi.Writer{
-		Forward: &f.buf,
 	}
 	f.buf.Grow(int(width))
 	_, _ = f.Write(b)
@@ -66,9 +56,6 @@ func Bytes(b []byte, width uint) []byte {
 func String(s string, width uint) string {
 	f := Writer{
 		Padding: width,
-	}
-	f.ansiWriter = ansi.Writer{
-		Forward: &f.buf,
 	}
 	f.buf.Grow(int(width))
 	_, _ = f.WriteString(s)
@@ -86,9 +73,9 @@ func (w *Writer) Write(b []byte) (int, error) {
 		c, charWidth := utf8.DecodeRune(b[i:])
 		// consume all the bytes of this character in the statemachine
 		nextI := i + charWidth
-		var step statemachine.StateTransition
+		var step statemachine.CollectorStep
 		for j := i; j < nextI; j++ {
-			step = w.stateMachine.Next(b[j])
+			step = w.ansiState.Next(b[j])
 		}
 
 		if step.IsPrinting() {
@@ -100,14 +87,14 @@ func (w *Writer) Write(b []byte) (int, error) {
 				if err != nil {
 					return 0, err
 				}
-				w.ansiWriter.ResetAnsi()
+				if w.ansiState.IsDirty() {
+					w.ansiState.WriteResetSequence(&w.buf)
+				}
 				w.lineLen = 0
 			}
 		}
 
-		if n, err := w.ansiWriter.Write(
-			b[i:nextI],
-		); err != nil {
+		if n, err := w.buf.Write(b[i:nextI]); err != nil {
 			return i + n, err
 		}
 
@@ -121,9 +108,9 @@ func (w *Writer) Write(b []byte) (int, error) {
 func (w *Writer) WriteString(s string) (int, error) {
 	i := 0
 	for nextI, c := range s {
-		var step statemachine.StateTransition
+		var step statemachine.CollectorStep
 		for j := i; j < nextI; j++ {
-			step = w.stateMachine.Next(s[j])
+			step = w.ansiState.Next(s[j])
 		}
 
 		if step.IsPrinting() {
@@ -134,12 +121,12 @@ func (w *Writer) WriteString(s string) (int, error) {
 				if err != nil {
 					return 0, err
 				}
-				w.ansiWriter.ResetAnsi()
+				w.ansiState.WriteResetSequence(&w.buf)
 				w.lineLen = 0
 			}
 		}
 
-		if err := w.ansiWriter.WriteRune(c); err != nil {
+		if _, err := w.buf.WriteRune(c); err != nil {
 			return i, err
 		}
 
@@ -152,12 +139,18 @@ func (w *Writer) WriteString(s string) (int, error) {
 func (w *Writer) pad() error {
 	if w.Padding > 0 && uint(w.lineLen) < w.Padding {
 		if w.PadFunc != nil {
+			// if we have a padding function, then we need an actual ansi writer
+			// in order to intercept the arbitrary write operations that a consumer
+			// might perform.
+			writer := ansi.WriterForState(w.ansiState, &w.buf)
 			for i := 0; i < int(w.Padding)-w.lineLen; i++ {
-				w.PadFunc(&w.ansiWriter)
+				w.PadFunc(writer)
 			}
+			w.ansiState = writer.ExportState()
 		} else {
+			// Otherwise, we can just write spaces directly to the buffer
 			for i := 0; i < int(w.Padding)-w.lineLen; i++ {
-				err := w.ansiWriter.WriteRune(' ')
+				_, err := w.buf.WriteRune(' ')
 				if err != nil {
 					return err
 				}

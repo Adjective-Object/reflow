@@ -4,64 +4,74 @@ import (
 	"bytes"
 	"errors"
 	"io"
-	"strconv"
 	"testing"
 
-	"github.com/muesli/reflow/ansi"
+	"github.com/muesli/reflow/internal/ansitransform"
+	"github.com/muesli/reflow/internal/ansitransform/ansi_tutils"
 )
+
+type args struct {
+	Indent     uint
+	IndentFunc IndentFunc
+}
+
+var tt = []ansi_tutils.TestCase{
+	// No-op, should pass through:
+	{
+		"foobar",
+		"foobar",
+		args{0, nil},
+	},
+	// Basic indentation:
+	{
+		"foobar",
+		"    foobar",
+		args{4, nil},
+	},
+	// Multi-line indentation:
+	{
+		"foo\nbar",
+		"    foo\n    bar",
+		args{4, nil},
+	},
+	// Multi-line with custom indenter:
+	{
+		"foo\nbar",
+		"----foo\n----bar",
+		args{4, func(w io.Writer) {
+			// custom indenter
+			w.Write([]byte("-"))
+		}},
+	},
+	// ANSI color sequence codes:
+	{
+		"\x1B[38;2;249;38;114mfoo",
+		"\x1B[38;2;249;38;114m\x1B[0m    \x1B[38;2;249;38;114mfoo",
+		args{4, nil},
+	},
+	// XTerm Links
+	{
+		"\x1B]8;;https://gith\nub.com\x07foo",
+		"\x1B]8;;https://gith\nub.com\x07\x1B]8;;\x1b\\    \x1B]8;;https://gith\nub.com\x1b\\foo",
+		args{4, nil},
+	},
+}
+
+func runTest(t testing.TB, w io.Writer, input string, param interface{}) (string, error) {
+	a := param.(args)
+	f := NewWriterPipe(w, a.Indent, a.IndentFunc)
+	_, err := f.Write([]byte(input))
+	return f.String(), err
+}
 
 func TestIndent(t *testing.T) {
 	t.Parallel()
 
-	tt := []struct {
-		Input    string
-		Expected string
-		Indent   uint
-	}{
-		// No-op, should pass through:
-		{
-			"foobar",
-			"foobar",
-			0,
-		},
-		// Basic indentation:
-		{
-			"foobar",
-			"    foobar",
-			4,
-		},
-		// Multi-line indentation:
-		{
-			"foo\nbar",
-			"    foo\n    bar",
-			4,
-		},
-		// ANSI color sequence codes:
-		{
-			"\x1B[38;2;249;38;114mfoo",
-			"\x1B[38;2;249;38;114m\x1B[0m    \x1B[38;2;249;38;114mfoo",
-			4,
-		},
-		// XTerm Links
-		{
-			"\x1B]8;;https://gith\nub.com\x07foo",
-			"\x1B]8;;https://gith\nub.com\x07\x1B]8;;\x1b\\    \x1B]8;;https://gith\nub.com\x1b\\foo",
-			4,
-		},
-	}
+	ansi_tutils.RunTests(t, tt, runTest)
+}
 
-	for i, tc := range tt {
-		f := NewWriter(tc.Indent, nil)
-
-		_, err := f.Write([]byte(tc.Input))
-		if err != nil {
-			t.Error(err)
-		}
-
-		if f.String() != tc.Expected {
-			t.Errorf("Test %d, expected:\n\n`%s`\n\nActual Output:\n\n`%s`", i, strconv.Quote(tc.Expected), strconv.Quote(f.String()))
-		}
-	}
+func FuzzEq(t *testing.F) {
+	ansi_tutils.RunFuzzEq(t, tt, runTest)
 }
 
 func TestIndentWriter(t *testing.T) {
@@ -148,8 +158,10 @@ func TestWriter_Error(t *testing.T) {
 	t.Parallel()
 
 	f := &Writer{
-		Indent:     2,
-		ansiWriter: ansi.Writer{Forward: fakeWriter{}},
+		Indent: 2,
+		ansi: ansitransform.Ansi{
+			Forward: fakeWriter{},
+		},
 	}
 
 	if _, err := f.Write([]byte("foo")); err != fakeErr {

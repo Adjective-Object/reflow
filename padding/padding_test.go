@@ -258,9 +258,8 @@ func TestWriter_Close(t *testing.T) {
 	t.Parallel()
 
 	f := &Writer{
-		Padding:    6,
-		lineLen:    1,
-		ansiWriter: ansi.Writer{Forward: fakeWriter{}},
+		Padding: 6,
+		lineLen: 1,
 	}
 
 	if err := f.Close(); err != fakeErr {

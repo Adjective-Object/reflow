@@ -14,6 +14,20 @@ type Writer struct {
 	runeBuf [4]byte
 }
 
+func NewWriterForState(
+	state statemachine.AnsiState,
+	forward io.Writer,
+) *Writer {
+	return &Writer{
+		Forward: forward,
+		state:   state,
+	}
+}
+
+func (w *Writer) ExportState() statemachine.AnsiState {
+	return w.state
+}
+
 // Write is used to write content to the ANSI buffer.
 func (w *Writer) Write(b []byte) (int, error) {
 	for i, c := range b {
@@ -35,14 +49,14 @@ func (w *Writer) WriteString(s string) (int, error) {
 }
 
 // WriteRune is used to write content to the ANSI buffer.
-func (w *Writer) WriteRune(r rune) error {
+func (w *Writer) WriteRune(r rune) (int, error) {
 	n := utf8.EncodeRune(w.runeBuf[:], r)
 	for i := 0; i < n; i++ {
 		if err := w.WriteByte(w.runeBuf[i]); err != nil {
-			return err
+			return i, err
 		}
 	}
-	return nil
+	return n, nil
 }
 
 // WriteByte is used to write content to the ANSI buffer.

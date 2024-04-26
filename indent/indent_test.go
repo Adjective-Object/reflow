@@ -6,8 +6,8 @@ import (
 	"io"
 	"testing"
 
-	"github.com/muesli/reflow/internal/ansitransform"
-	"github.com/muesli/reflow/internal/ansitransform/ansi_tutils"
+	"github.com/muesli/reflow/ansi"
+	"github.com/muesli/reflow/internal/ansi_tutils"
 )
 
 type args struct {
@@ -59,7 +59,12 @@ var tt = []ansi_tutils.TestCase{
 
 func runTest(t testing.TB, w io.Writer, input string, param interface{}) (string, error) {
 	a := param.(args)
-	f := NewWriterPipe(w, a.Indent, a.IndentFunc)
+	var f *Writer
+	if w == nil {
+		f = NewWriter(a.Indent, a.IndentFunc)
+	} else {
+		f = NewWriterPipe(w, a.Indent, a.IndentFunc)
+	}
 	_, err := f.Write([]byte(input))
 	return f.String(), err
 }
@@ -159,7 +164,7 @@ func TestWriter_Error(t *testing.T) {
 
 	f := &Writer{
 		Indent: 2,
-		ansi: ansitransform.Ansi{
+		ansiWriter: ansi.Writer{
 			Forward: fakeWriter{},
 		},
 	}

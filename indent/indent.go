@@ -140,7 +140,7 @@ func (w *Writer) writeRuneBytes(c rune, b []byte) error {
 				}
 			} else {
 				for i := 0; i < int(w.Indent); i++ {
-					if err := w.ansiWriter.WriteRune(' '); err != nil {
+					if _, err := w.ansiWriter.WriteRune(' '); err != nil {
 						return err
 					}
 				}
@@ -156,7 +156,8 @@ func (w *Writer) writeRuneBytes(c rune, b []byte) error {
 		}
 	}
 
-	return w.ansiWriter.WriteRune(c)
+	_, err := w.ansiWriter.WriteRune(c)
+	return err
 }
 
 // Bytes returns the indented result as a byte slice.

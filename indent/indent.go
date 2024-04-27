@@ -8,6 +8,12 @@ import (
 	"github.com/muesli/reflow/internal/statemachine"
 )
 
+//////////////////////////////////////
+//                                  //
+// Root-Level Constructor Functions //
+//                                  //
+//////////////////////////////////////
+
 // Common interface fronting AdvancedWriter and SimpleWriter
 // for backwards-compatibility with existing code.
 type Writer interface {
@@ -18,6 +24,49 @@ type Writer interface {
 	String() string
 }
 
+// MakeSimpleWriter creates a new indent-writer instance, used to write content
+// to an internal buffer, with the specified indent level.
+func NewSimpleWriter(indent uint) SimpleWriter {
+	return SimpleWriter{
+		Indent: indent,
+	}
+}
+
+// NewWriterPipe creates a new indent-writer instance, used to write content to
+// the provided io.Writer, with the specified indent level.
+//
+// If you don't need indent functions, you should prefer using MakeSimpleWriter instead.
+//
+// See NewWriterPipe for an explanation
+func NewWriter(indent uint, indentFunc IndentFunc) Writer {
+	return NewWriterPipe(nil, indent, indentFunc)
+}
+
+// NewWriterPipe creates a new indent-writer instance, used to write content to
+// the provided io.Writer, with the specified indent level.
+//
+// If you don't need io forwarding or indent functions, you should prefer using
+// MakeSimpleWriter instead.
+//
+// Because this returns an interface type, the return value is always heap-allocated,
+// whereas MakeSimpleWriter can be stack-allocated since it returns a concrete type.
+//
+// If this is used in an inner-loop function, this can lead to a lot of repeated heap
+// allocations
+func NewWriterPipe(w io.Writer, indent uint, indentFunc IndentFunc) Writer {
+	if indentFunc == nil && w == nil {
+		s := NewSimpleWriter(indent)
+		return &s
+	}
+	return NewAdvancedWriter(w, indent, indentFunc)
+}
+
+///////////////////
+//               //
+// Simple Writer //
+//               //
+///////////////////
+
 // A writer that writes to its own internal buffer, with a fixed indent level.
 //
 // This is the most efficient writer for most usecases, as it doesn't do runtime
@@ -27,12 +76,6 @@ type SimpleWriter struct {
 	state      statemachine.AnsiState
 	buf        bytes.Buffer
 	skipIndent bool
-}
-
-func NewSimpleWriter(indent uint) SimpleWriter {
-	return SimpleWriter{
-		Indent: indent,
-	}
 }
 
 // Bytes is shorthand for declaring a new default indent-writer instance,
@@ -125,34 +168,11 @@ func (w *SimpleWriter) String() string {
 	return w.buf.String()
 }
 
-// NewWriterPipe creates a new indent-writer instance, used to write content to
-// the provided io.Writer, with the specified indent level.
-//
-// If you don't need indent functions, you should prefer using MakeSimpleWriter instead.
-//
-// See NewWriterPipe for an explanation
-func NewWriter(indent uint, indentFunc IndentFunc) Writer {
-	return NewWriterPipe(nil, indent, indentFunc)
-}
-
-// NewWriterPipe creates a new indent-writer instance, used to write content to
-// the provided io.Writer, with the specified indent level.
-//
-// If you don't need io forwarding or indent functions, you should prefer using
-// MakeSimpleWriter instead.
-//
-// Because this returns an interface type, the return value is always heap-allocated,
-// whereas MakeSimpleWriter can be stack-allocated since it returns a concrete type.
-//
-// If this is used in e.g. the innerloop of a terminal UI, this can lead to a lot of
-// heap allocations.
-func NewWriterPipe(w io.Writer, indent uint, indentFunc IndentFunc) Writer {
-	if indentFunc == nil && w == nil {
-		s := NewSimpleWriter(indent)
-		return &s
-	}
-	return NewAdvancedWriter(w, indent, indentFunc)
-}
+//////////////////////
+//                  //
+// Advanced Writer  //
+//                  //
+//////////////////////
 
 type IndentFunc func(w io.Writer)
 

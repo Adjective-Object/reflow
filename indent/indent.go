@@ -3,43 +3,35 @@ package indent
 import (
 	"bytes"
 	"io"
-	"unicode/utf8"
 
 	"github.com/muesli/reflow/ansi"
 	"github.com/muesli/reflow/internal/statemachine"
 )
 
-type IndentFunc func(w io.Writer)
+// Common interface fronting AdvancedWriter and SimpleWriter
+// for backwards-compatibility with existing code.
+type Writer interface {
+	Write([]byte) (int, error)
+	WriteString(string) (int, error)
+	WriteByte(byte) error
+	Bytes() []byte
+	String() string
+}
 
-type Writer struct {
+// A writer that writes to its own internal buffer, with a fixed indent level.
+//
+// This is the most efficient writer for most usecases, as it doesn't do runtime
+// pointer indirection through a function pointer for each byte written.
+type SimpleWriter struct {
 	Indent     uint
-	IndentFunc IndentFunc
-
-	stateMachine statemachine.StateMachine
-	ansiWriter   ansi.Writer
-	buf          bytes.Buffer
-	skipIndent   bool
-	ansi         bool
+	state      statemachine.AnsiState
+	buf        bytes.Buffer
+	skipIndent bool
 }
 
-func NewWriter(indent uint, indentFunc IndentFunc) *Writer {
-	w := &Writer{
-		Indent:     indent,
-		IndentFunc: indentFunc,
-	}
-	w.ansiWriter = ansi.Writer{
-		Forward: &w.buf,
-	}
-	return w
-}
-
-func NewWriterPipe(forward io.Writer, indent uint, indentFunc IndentFunc) *Writer {
-	return &Writer{
-		Indent:     indent,
-		IndentFunc: indentFunc,
-		ansiWriter: ansi.Writer{
-			Forward: forward,
-		},
+func NewSimpleWriter(indent uint) SimpleWriter {
+	return SimpleWriter{
+		Indent: indent,
 	}
 }
 
@@ -48,11 +40,8 @@ func NewWriterPipe(forward io.Writer, indent uint, indentFunc IndentFunc) *Write
 func Bytes(b []byte, indent uint) []byte {
 	// Since the Writer is not returned, we can use a fully on-stack writer
 	// and include a pointer into it in the ansiWriter.
-	f := Writer{
+	f := SimpleWriter{
 		Indent: indent,
-	}
-	f.ansiWriter = ansi.Writer{
-		Forward: &f.buf,
 	}
 	f.buf.Grow(len(b))
 
@@ -69,11 +58,8 @@ func String(s string, indent uint) string {
 	//
 	// TODO: revisit heap escape here: it currently escapes becaues it's
 	// referenced by ansiWriter, which shouldn't be escaping here..
-	f := Writer{
+	f := SimpleWriter{
 		Indent: indent,
-	}
-	f.ansiWriter = ansi.Writer{
-		Forward: &f.buf,
 	}
 	// preallocate buffer to speed up
 	f.buf.Grow(len(s))
@@ -84,39 +70,20 @@ func String(s string, indent uint) string {
 }
 
 // Write is used to write content to the indent buffer.
-func (w *Writer) Write(b []byte) (int, error) {
-	// iterate runewise without reallocating
-	i := 0
-	// iterate runes without copying the byte array onto the heap
-	for i < len(b) {
-		c, charWidth := utf8.DecodeRune(b[i:])
-		nextI := i + charWidth
-		if err := w.writeRuneBytes(c, b[i:nextI]); err != nil {
+func (w *SimpleWriter) Write(b []byte) (int, error) {
+	var i int
+	for i := 0; i < len(b); i++ {
+		if err := w.WriteByte(b[i]); err != nil {
 			return i, err
 		}
-
-		i = nextI
 	}
-
-	return len(b), nil
+	return i, nil
 }
 
 // Write is used to write content to the indent buffer.
-func (w *Writer) WriteString(s string) (int, error) {
-	// iterate runewise without reallocating
-	// iterate runes without copying the byte array onto the heap
-	bi := 0
-	runeBytes := [4]byte{}
-	for i, c := range s {
-		// copy bytes from the string into an on-stack byte array
-		diff := i - bi
-		for j := 0; j < diff; j++ {
-			runeBytes[j] = s[bi]
-			bi++
-		}
-
-		// write the rune to the buffer
-		if err := w.writeRuneBytes(c, runeBytes[0:diff]); err != nil {
+func (w *SimpleWriter) WriteString(s string) (int, error) {
+	for i := 0; i < len(s); i++ {
+		if err := w.WriteByte(s[i]); err != nil {
 			return i, err
 		}
 	}
@@ -124,48 +91,163 @@ func (w *Writer) WriteString(s string) (int, error) {
 	return len(s), nil
 }
 
-func (w *Writer) writeRuneBytes(c rune, b []byte) error {
-
-	var step statemachine.StateTransition
-	for i := 0; i < len(b); i++ {
-		step = w.stateMachine.Next(b[i])
-	}
-
+func (w *SimpleWriter) WriteByte(b byte) error {
+	step := w.state.Next(b)
 	if step.IsPrinting() {
 		if !w.skipIndent {
-			w.ansiWriter.ResetAnsi()
-			if w.IndentFunc != nil {
-				for i := 0; i < int(w.Indent); i++ {
-					w.IndentFunc(&w.ansiWriter)
+			w.state.WriteResetSequence(&w.buf)
+			for i := 0; i < int(w.Indent); i++ {
+				if err := w.buf.WriteByte(' '); err != nil {
+					return err
 				}
-			} else {
+			}
+
+			w.skipIndent = true
+			w.state.WriteRestoreSequence(&w.buf)
+		}
+
+		if b == '\n' {
+			// end of current line
+			w.skipIndent = false
+		}
+	}
+
+	return w.buf.WriteByte(b)
+}
+
+// Bytes returns the indented result as a byte slice.
+func (w *SimpleWriter) Bytes() []byte {
+	return w.buf.Bytes()
+}
+
+// String returns the indented result as a string.
+func (w *SimpleWriter) String() string {
+	return w.buf.String()
+}
+
+// NewWriterPipe creates a new indent-writer instance, used to write content to
+// the provided io.Writer, with the specified indent level.
+//
+// If you don't need indent functions, you should prefer using MakeSimpleWriter instead.
+//
+// See NewWriterPipe for an explanation
+func NewWriter(indent uint, indentFunc IndentFunc) Writer {
+	return NewWriterPipe(nil, indent, indentFunc)
+}
+
+// NewWriterPipe creates a new indent-writer instance, used to write content to
+// the provided io.Writer, with the specified indent level.
+//
+// If you don't need io forwarding or indent functions, you should prefer using
+// MakeSimpleWriter instead.
+//
+// Because this returns an interface type, the return value is always heap-allocated,
+// whereas MakeSimpleWriter can be stack-allocated since it returns a concrete type.
+//
+// If this is used in e.g. the innerloop of a terminal UI, this can lead to a lot of
+// heap allocations.
+func NewWriterPipe(w io.Writer, indent uint, indentFunc IndentFunc) Writer {
+	if indentFunc == nil && w == nil {
+		s := NewSimpleWriter(indent)
+		return &s
+	}
+	return NewAdvancedWriter(w, indent, indentFunc)
+}
+
+type IndentFunc func(w io.Writer)
+
+// The "advanced" writer type, that allows for custom indentation functions
+//
+// Prefer using SimpleWriter where possible, as it's more efficient.
+type AdvancedWriter struct {
+	Indent     uint
+	IndentFunc IndentFunc
+	buf        bytes.Buffer
+	state      statemachine.AnsiState
+	Forward    io.Writer
+	skipIndent bool
+}
+
+func NewAdvancedWriter(w io.Writer, indent uint, indentFunc IndentFunc) *AdvancedWriter {
+	writer := &AdvancedWriter{
+		Indent:     indent,
+		IndentFunc: indentFunc,
+		Forward:    w,
+	}
+	if w == nil {
+		writer.Forward = &writer.buf
+	}
+	return writer
+}
+
+func (w *AdvancedWriter) Write(b []byte) (int, error) {
+	var i int
+	for i := 0; i < len(b); i++ {
+		if err := w.WriteByte(b[i]); err != nil {
+			return i, err
+		}
+	}
+	return i, nil
+}
+
+func (w *AdvancedWriter) WriteString(s string) (int, error) {
+	for i := 0; i < len(s); i++ {
+		if err := w.WriteByte(s[i]); err != nil {
+			return i, err
+		}
+	}
+
+	return len(s), nil
+}
+
+func (w *AdvancedWriter) WriteByte(b byte) error {
+	// buffer used to write single bytes to the Forwarded io.Writer
+	var buf [1]byte
+	step := w.state.Next(b)
+	if step.IsPrinting() {
+		if !w.skipIndent {
+			if _, err := w.Forward.Write(w.state.ResetSequence()); err != nil {
+				return err
+			}
+			if w.IndentFunc != nil {
+				// if we have an indent function, pass it a wrapped writer so we can
+				// track any ansi transitions in the callback.
+				wrappedWriter := ansi.NewWriterForState(w.state, w.Forward)
 				for i := 0; i < int(w.Indent); i++ {
-					if _, err := w.ansiWriter.WriteRune(' '); err != nil {
+					w.IndentFunc(wrappedWriter)
+				}
+				// restore our internal state using the wrapped writer's state
+				w.state = wrappedWriter.ExportState()
+			} else {
+				buf[0] = ' '
+				for i := 0; i < int(w.Indent); i++ {
+					if _, err := w.Forward.Write(buf[:]); err != nil {
 						return err
 					}
 				}
 			}
 
 			w.skipIndent = true
-			w.ansiWriter.RestoreAnsi()
+			if _, err := w.Forward.Write(w.state.RestoreSequence()); err != nil {
+				return err
+			}
 		}
 
-		if c == '\n' {
+		if b == '\n' {
 			// end of current line
 			w.skipIndent = false
 		}
 	}
 
-	_, err := w.ansiWriter.WriteRune(c)
+	buf[0] = b
+	_, err := w.Forward.Write(buf[:])
 	return err
 }
 
-// Bytes returns the indented result as a byte slice.
-func (w *Writer) Bytes() []byte {
+func (w *AdvancedWriter) Bytes() []byte {
 	return w.buf.Bytes()
 }
 
-// String returns the indented result as a string.
-func (w *Writer) String() string {
+func (w *AdvancedWriter) String() string {
 	return w.buf.String()
 }

@@ -87,7 +87,10 @@ func (ansiState *AnsiState) ResetSequence() []byte {
 		cap += len(colorResetSeq)
 	}
 	if ansiState.xtermLinkCommand.Type != TypeNone {
-		cap += len(xtermResetSeq)
+		cap += len(xtermResetSeq1) + len(xtermResetSeq2)
+		if len(ansiState.xtermLinkCommand.Params) > 0 {
+			cap += len(ansiState.xtermLinkCommand.Params[0])
+		}
 	}
 
 	buf := bytes.NewBuffer(make([]byte, 0, cap))
@@ -96,7 +99,8 @@ func (ansiState *AnsiState) ResetSequence() []byte {
 }
 
 const colorResetSeq = "\x1b[0m"
-const xtermResetSeq = "\x1b]8;;\x1b\\"
+const xtermResetSeq1 = "\x1b]8;"
+const xtermResetSeq2 = ";\x1b\\"
 
 // Gets an ansi sequence that can reset a stream to a neutral state
 // against the stored state of the AnsiState
@@ -105,7 +109,13 @@ func (ansiState *AnsiState) WriteResetSequence(out *bytes.Buffer) {
 		out.WriteString(colorResetSeq)
 	}
 	if ansiState.xtermLinkCommand.Type != TypeNone {
-		out.WriteString(xtermResetSeq)
+		out.WriteString(xtermResetSeq1)
+		// write any link parameters
+		if len(ansiState.xtermLinkCommand.Params) > 0 &&
+			len(ansiState.xtermLinkCommand.Params[0]) > 0 {
+			out.Write(ansiState.xtermLinkCommand.Params[0])
+		}
+		out.WriteString(xtermResetSeq2)
 	}
 }
 

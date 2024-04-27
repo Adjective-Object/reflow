@@ -14,12 +14,92 @@ type TestCase struct {
 	Params   interface{}
 }
 
-type TestFunc = func(t testing.TB, writer io.Writer, input string, params interface{}) (string, error)
+type WriterWithBuffer interface {
+	io.Writer
+	Bytes() []byte
+	String() string
+}
+
+type TestFunc = func(t testing.TB, writer io.Writer, params interface{}) WriterWithBuffer
+
+func assertOutputs(t *testing.T, w WriterWithBuffer, output string) {
+	gotString := w.String()
+	if gotString != output {
+		t.Errorf("expected:\n\n`%s`\n\nActual Output:\n\n`%s`",
+			strconv.Quote(output),
+			strconv.Quote(gotString))
+	}
+
+	gotBytes := w.Bytes()
+	if string(gotBytes) != output {
+		t.Errorf("expected:\n\n`%s`\n\nActual Output:\n\n`%s`",
+			strconv.Quote(output),
+			strconv.Quote(string(gotBytes)))
+	}
+}
+
+type RuneWriter interface {
+	WriteRune(r rune) (int, error)
+}
+
+func runIndividualTest(
+	t *testing.T,
+	fwdWriter io.Writer,
+	testFunc TestFunc,
+	tc TestCase,
+) {
+	// Check .Write()
+	writer := testFunc(t, fwdWriter, tc.Params)
+	if _, err := writer.Write([]byte(tc.Input)); err != nil {
+		t.Error(err)
+	}
+	assertOutputs(t, writer, tc.Expected)
+
+	// also check for WriteString()
+	if _, is := writer.(io.StringWriter); is {
+		t.Run(".WriteString", func(t *testing.T) {
+			writer := testFunc(t, fwdWriter, tc.Params)
+			sw := writer.(io.StringWriter)
+			if _, err := sw.WriteString(tc.Input); err != nil {
+				t.Fatal(err)
+			}
+			assertOutputs(t, writer, tc.Expected)
+		})
+	}
+
+	// also check for WriteByte()
+	if _, is := writer.(io.ByteWriter); is {
+		t.Run(".WriteByte", func(t *testing.T) {
+			writer := testFunc(t, fwdWriter, tc.Params)
+			sw := writer.(io.ByteWriter)
+			for i := 0; i < len(tc.Input); i++ {
+				if err := sw.WriteByte(tc.Input[i]); err != nil {
+					t.Fatal(err)
+				}
+			}
+			assertOutputs(t, writer, tc.Expected)
+		})
+	}
+
+	// also check for WriteRune()
+	if _, is := writer.(RuneWriter); is {
+		t.Run(".WriteRunes", func(t *testing.T) {
+			writer := testFunc(t, fwdWriter, tc.Params)
+			sw := writer.(RuneWriter)
+			for _, r := range tc.Input {
+				if _, err := sw.WriteRune(r); err != nil {
+					t.Fatal(err)
+				}
+			}
+			assertOutputs(t, writer, tc.Expected)
+		})
+	}
+}
 
 func RunTests(
 	t *testing.T,
 	testCases []TestCase,
-	testFunc TestFunc,
+	writerFactory TestFunc,
 ) {
 	for i, tc := range testCases {
 		tc := tc
@@ -29,46 +109,27 @@ func RunTests(
 			t.Parallel()
 			t.Run("fwd", func(t *testing.T) {
 				t.Parallel()
-				w := &bytes.Buffer{}
-				_, err := testFunc(t, w, tc.Input, tc.Params)
-				if err != nil {
+				forwardBuffer := &bytes.Buffer{}
+				writer := writerFactory(t, forwardBuffer, tc.Params)
+				if _, err := writer.Write([]byte(tc.Input)); err != nil {
 					t.Fatal(err)
 				}
-
-				got := w.String()
+				got := forwardBuffer.String()
 				if got != tc.Expected {
-					t.Errorf("expected:\n\n`%s`\n\nActual Output:\n\n`%s`", strconv.Quote(tc.Expected), strconv.Quote(got))
+					t.Errorf("for input:\n%s\n\nexpected:\n`%s`\n\nActual Output:\n`%s`",
+						strconv.Quote(tc.Input),
+						strconv.Quote(tc.Expected),
+						strconv.Quote(got))
 				}
 			})
 
 			t.Run("buf", func(t *testing.T) {
 				t.Parallel()
-				got, err := testFunc(t, nil, tc.Input, tc.Params)
-				if err != nil {
+				writer := writerFactory(t, nil, tc.Params)
+				if _, err := writer.Write([]byte(tc.Input)); err != nil {
 					t.Fatal(err)
 				}
-				if got != tc.Expected {
-					t.Errorf("expected:\n\n`%s`\n\nActual Output:\n\n`%s`", strconv.Quote(tc.Expected), strconv.Quote(got))
-				}
-			})
-
-			t.Run("fwd == buf", func(t *testing.T) {
-				t.Parallel()
-				w := &bytes.Buffer{}
-				_, err := testFunc(t, w, tc.Input, tc.Params)
-				if err != nil {
-					t.Fatal(err)
-				}
-
-				gotFwd := w.String()
-				bufResult, err := testFunc(t, nil, tc.Input, tc.Params)
-				if err != nil {
-					t.Fatal(err)
-				}
-
-				if gotFwd != bufResult {
-					t.Errorf("forward:\n\n`%s`\n\nbuf:\n\n`%s`", strconv.Quote(gotFwd), strconv.Quote(bufResult))
-				}
+				assertOutputs(t, writer, tc.Expected)
 			})
 		})
 	}
@@ -133,22 +194,27 @@ func RunFuzzEq(
 			}
 		}
 
-		v := vr.Elem().Interface()
+		params := vr.Elem().Interface()
 
 		// run through both converters
-		w := &bytes.Buffer{}
-		_, err := testFunc(t, w, inp, v)
-		if err != nil {
+		fwdBuffer := &bytes.Buffer{}
+		fwdWriter := testFunc(t, fwdBuffer, params)
+		if _, err := fwdWriter.Write([]byte(inp)); err != nil {
 			return []reflect.Value{}
 		}
-		gotFwd := w.String()
-		bufResult, err := testFunc(t, nil, inp, v)
-		if err != nil {
+		gotFwd := fwdBuffer.String()
+
+		bufWriter := testFunc(t, nil, params)
+		if _, err := bufWriter.Write([]byte(inp)); err != nil {
 			return []reflect.Value{}
 		}
 
-		if gotFwd != bufResult {
-			t.Errorf("forward:\n\n`%s`\n\nbuf:\n\n`%s`", strconv.Quote(gotFwd), strconv.Quote(bufResult))
+		gotBuf := bufWriter.String()
+
+		if gotFwd != gotBuf {
+			t.Errorf("forward:\n\n`%s`\n\nbuf:\n\n`%s`",
+				strconv.Quote(gotFwd),
+				strconv.Quote(gotBuf))
 		}
 
 		return []reflect.Value{}

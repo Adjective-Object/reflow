@@ -6,11 +6,10 @@ import (
 	"io"
 	"testing"
 
-	"github.com/muesli/reflow/ansi"
 	"github.com/muesli/reflow/internal/ansi_tutils"
 )
 
-type args struct {
+type params struct {
 	Indent     uint
 	IndentFunc IndentFunc
 }
@@ -18,65 +17,77 @@ type args struct {
 var tt = []ansi_tutils.TestCase{
 	// No-op, should pass through:
 	{
-		"foobar",
-		"foobar",
-		args{0, nil},
+		Input:    "foobar",
+		Expected: "foobar",
+		Params:   params{0, nil},
 	},
 	// Basic indentation:
 	{
-		"foobar",
-		"    foobar",
-		args{4, nil},
+		Input:    "foobar",
+		Expected: "    foobar",
+		Params:   params{4, nil},
 	},
 	// Multi-line indentation:
 	{
-		"foo\nbar",
-		"    foo\n    bar",
-		args{4, nil},
+		Input:    "foo\nbar",
+		Expected: "    foo\n    bar",
+		Params:   params{4, nil},
 	},
 	// Multi-line with custom indenter:
 	{
-		"foo\nbar",
-		"----foo\n----bar",
-		args{4, func(w io.Writer) {
+		Input:    "foo\nbar",
+		Expected: "----foo\n----bar",
+		Params: params{4, func(w io.Writer) {
 			// custom indenter
 			w.Write([]byte("-"))
 		}},
 	},
 	// ANSI color sequence codes:
 	{
-		"\x1B[38;2;249;38;114mfoo",
-		"\x1B[38;2;249;38;114m\x1B[0m    \x1B[38;2;249;38;114mfoo",
-		args{4, nil},
+		Input:    "\x1B[38;2;249;38;114mfoo",
+		Expected: "\x1B[38;2;249;38;114m\x1B[0m    \x1B[38;2;249;38;114mfoo",
+		Params:   params{4, nil},
+	},
+	// ANSI color sequence codes interacting with newlines:
+	{
+		Input:    "\x1B[38;2;249;38;114mfoo\nbar",
+		Expected: "\x1B[38;2;249;38;114m\x1B[0m    \x1B[38;2;249;38;114mfoo\n\x1B[0m    \x1B[38;2;249;38;114mbar",
+		Params:   params{4, nil},
 	},
 	// XTerm Links
 	{
-		"\x1B]8;;https://gith\nub.com\x07foo",
-		"\x1B]8;;https://gith\nub.com\x07\x1B]8;;\x1b\\    \x1B]8;;https://gith\nub.com\x1b\\foo",
-		args{4, nil},
+		Input:    "\x1B]8;;https://gith\nub.com\x07foo",
+		Expected: "\x1B]8;;https://gith\nub.com\x07\x1B]8;;\x1b\\    \x1B]8;;https://gith\nub.com\x1b\\foo",
+		Params:   params{4, nil},
+	},
+	// XTerm Links with IDs
+	{
+		Input:    "\x1B]8;id=1;https://gith\nub.com\x07foo",
+		Expected: "\x1B]8;id=1;https://gith\nub.com\x07\x1B]8;id=1;\x1b\\    \x1B]8;id=1;https://gith\nub.com\x1b\\foo",
+		Params:   params{4, nil},
 	},
 }
 
-func runTest(t testing.TB, w io.Writer, input string, param interface{}) (string, error) {
-	a := param.(args)
-	var f *Writer
+func makeTestWriter(
+	t testing.TB,
+	w io.Writer,
+	param interface{}) ansi_tutils.WriterWithBuffer {
+	a := param.(params)
 	if w == nil {
-		f = NewWriter(a.Indent, a.IndentFunc)
+		return NewWriter(a.Indent, a.IndentFunc)
 	} else {
-		f = NewWriterPipe(w, a.Indent, a.IndentFunc)
+		return NewWriterPipe(w, a.Indent, a.IndentFunc)
 	}
-	_, err := f.Write([]byte(input))
-	return f.String(), err
 }
 
 func TestIndent(t *testing.T) {
 	t.Parallel()
 
-	ansi_tutils.RunTests(t, tt, runTest)
+	ansi_tutils.RunTests(t, tt, makeTestWriter)
 }
 
 func FuzzEq(t *testing.F) {
-	ansi_tutils.RunFuzzEq(t, tt, runTest)
+	ansi_tutils.RunFuzzEq(t, tt, makeTestWriter)
 }
 
 func TestIndentWriter(t *testing.T) {
@@ -115,6 +126,119 @@ func BenchmarkIndentString(b *testing.B) {
 		b.ResetTimer()
 		for pb.Next() {
 			String("foo", 2)
+		}
+	})
+}
+
+func BenchmarkIndentBytes(b *testing.B) {
+	foo := []byte("foo")
+	b.RunParallel(func(pb *testing.PB) {
+		b.ReportAllocs()
+		b.ResetTimer()
+		for pb.Next() {
+			Bytes(foo, 2)
+		}
+	})
+}
+
+func BenchmarkCompatTests_SimpleWriter(b *testing.B) {
+	b.RunParallel(func(pb *testing.PB) {
+		b.ReportAllocs()
+		b.ResetTimer()
+		for pb.Next() {
+			for _, t := range tt {
+				// filter out tests that don't use an indent function
+				// since those are the only tests writeable by all 3
+				// writers
+				if t.Params.(params).IndentFunc == nil {
+					continue
+				}
+
+				writer := NewSimpleWriter(t.Params.(params).Indent)
+				writer.Write([]byte(t.Input))
+			}
+		}
+	})
+}
+
+func BenchmarkCompatTests_AdvancedWriter_Fwd(b *testing.B) {
+	b.RunParallel(func(pb *testing.PB) {
+		b.ReportAllocs()
+		b.ResetTimer()
+		for pb.Next() {
+			for _, t := range tt {
+				// filter out tests that don't use an indent function
+				// since those are the only tests writeable by all 3
+				// writers
+				if t.Params.(params).IndentFunc == nil {
+					continue
+				}
+
+				writer := NewAdvancedWriter(&bytes.Buffer{}, t.Params.(params).Indent, t.Params.(params).IndentFunc)
+				writer.Write([]byte(t.Input))
+			}
+		}
+	})
+}
+
+func BenchmarkCompatTests_AdvancedWriter_Buf(b *testing.B) {
+	b.RunParallel(func(pb *testing.PB) {
+		b.ReportAllocs()
+		b.ResetTimer()
+		for pb.Next() {
+			for _, t := range tt {
+				// filter out tests that don't use an indent function
+				// since those are the only tests writeable by all 3
+				// writers
+				if t.Params.(params).IndentFunc == nil {
+					continue
+				}
+
+				writer := NewAdvancedWriter(nil, t.Params.(params).Indent, t.Params.(params).IndentFunc)
+				writer.Write([]byte(t.Input))
+			}
+		}
+	})
+}
+
+func BenchmarkCompatTests_InterfaceWriter_Fwd(b *testing.B) {
+	b.RunParallel(func(pb *testing.PB) {
+		b.ReportAllocs()
+		b.ResetTimer()
+		for pb.Next() {
+			for _, t := range tt {
+				// filter out tests that don't use an indent function
+				// since those are the only tests writeable by all 3
+				// writers
+				if t.Params.(params).IndentFunc == nil {
+					continue
+				}
+
+				p := t.Params.(params)
+				writer := NewWriterPipe(&bytes.Buffer{}, p.Indent, p.IndentFunc)
+				writer.Write([]byte(t.Input))
+			}
+		}
+	})
+}
+
+func BenchmarkCompatTests_InterfaceWriter_Buf(b *testing.B) {
+	b.RunParallel(func(pb *testing.PB) {
+		b.ReportAllocs()
+		b.ResetTimer()
+		for pb.Next() {
+			for _, t := range tt {
+				// filter out tests that don't use an indent function
+				// since those are the only tests writeable by all 3
+				// writers
+				if t.Params.(params).IndentFunc == nil {
+					continue
+				}
+
+				p := t.Params.(params)
+				writer := NewWriterPipe(nil, p.Indent, p.IndentFunc)
+				writer.Write([]byte(t.Input))
+			}
 		}
 	})
 }
@@ -162,28 +286,17 @@ func TestNewWriterPipe(t *testing.T) {
 func TestWriter_Error(t *testing.T) {
 	t.Parallel()
 
-	f := &Writer{
-		Indent: 2,
-		ansiWriter: ansi.Writer{
-			Forward: fakeWriter{},
-		},
-	}
+	f := NewWriterPipe(fakeWriter{}, 2, nil)
 
-	if _, err := f.Write([]byte("foo")); err != fakeErr {
-		t.Error(err)
-	}
-
-	f.skipIndent = true
-
-	if _, err := f.Write([]byte("foo")); err != fakeErr {
+	if _, err := f.Write([]byte("foo")); err != errFakeErr {
 		t.Error(err)
 	}
 }
 
-var fakeErr = errors.New("fake error")
+var errFakeErr = errors.New("fake error")
 
 type fakeWriter struct{}
 
 func (fakeWriter) Write(_ []byte) (int, error) {
-	return 0, fakeErr
+	return 0, errFakeErr
 }

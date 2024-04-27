@@ -10,8 +10,8 @@ import (
 type Writer struct {
 	Forward io.Writer
 
-	state   statemachine.AnsiState
-	runeBuf [4]byte
+	state    statemachine.AnsiState
+	lastStep statemachine.StateTransition
 }
 
 func NewWriterForState(
@@ -22,10 +22,6 @@ func NewWriterForState(
 		Forward: forward,
 		state:   state,
 	}
-}
-
-func (w *Writer) ExportState() statemachine.AnsiState {
-	return w.state
 }
 
 // Write is used to write content to the ANSI buffer.
@@ -50,9 +46,10 @@ func (w *Writer) WriteString(s string) (int, error) {
 
 // WriteRune is used to write content to the ANSI buffer.
 func (w *Writer) WriteRune(r rune) (int, error) {
-	n := utf8.EncodeRune(w.runeBuf[:], r)
+	var runeBuf [4]byte
+	n := utf8.EncodeRune(runeBuf[:], r)
 	for i := 0; i < n; i++ {
-		if err := w.WriteByte(w.runeBuf[i]); err != nil {
+		if err := w.WriteByte(runeBuf[i]); err != nil {
 			return i, err
 		}
 	}
@@ -61,7 +58,7 @@ func (w *Writer) WriteRune(r rune) (int, error) {
 
 // WriteByte is used to write content to the ANSI buffer.
 func (w *Writer) WriteByte(b byte) error {
-	w.state.Next(b)
+	w.lastStep = w.state.Next(b).StateTransition
 	_, err := w.Forward.Write([]byte{b})
 	return err
 }
@@ -70,6 +67,9 @@ func (w *Writer) LastSequence() string {
 	return string(w.state.ResetSequence())
 }
 
+// Resets the current ansi state to a neutral ansi state
+//
+// The current ansi state can be restored by calling RestoreAnsi
 func (w *Writer) ResetAnsi() {
 	if !w.state.IsDirty() {
 		return
@@ -77,6 +77,22 @@ func (w *Writer) ResetAnsi() {
 	_, _ = w.Forward.Write(w.state.ResetSequence())
 }
 
+// Restores the saved ansi state
 func (w *Writer) RestoreAnsi() {
 	_, _ = w.Forward.Write(w.state.RestoreSequence())
+}
+
+// Clears the internal state of the ansistate
+func (w *Writer) ClearAnsi() {
+	w.state.ClearState()
+}
+
+// Check if the writer is currently in a printable sequence
+// of characters (e.g. not in an ANSI escape sequence)
+func (w *Writer) IsPrinting() bool {
+	return w.lastStep.IsPrinting()
+}
+
+func (w *Writer) ExportState() statemachine.AnsiState {
+	return w.state
 }

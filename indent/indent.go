@@ -194,9 +194,6 @@ func NewAdvancedWriter(w io.Writer, indent uint, indentFunc IndentFunc) *Advance
 		IndentFunc: indentFunc,
 		Forward:    w,
 	}
-	if w == nil {
-		writer.Forward = &writer.buf
-	}
 	return writer
 }
 
@@ -226,30 +223,49 @@ func (w *AdvancedWriter) WriteByte(b byte) error {
 	step := w.state.Next(b)
 	if step.IsPrinting() {
 		if !w.skipIndent {
-			if _, err := w.Forward.Write(w.state.ResetSequence()); err != nil {
-				return err
+			if w.Forward != nil {
+				if _, err := w.Forward.Write(w.state.ResetSequence()); err != nil {
+					return err
+				}
+			} else {
+				w.state.WriteResetSequence(&w.buf)
 			}
 			if w.IndentFunc != nil {
 				// if we have an indent function, pass it a wrapped writer so we can
 				// track any ansi transitions in the callback.
-				wrappedWriter := ansi.NewWriterForState(w.state, w.Forward)
+				var wrappedWriter *ansi.Writer
+				if w.Forward != nil {
+					wrappedWriter = ansi.NewWriterForState(w.state, w.Forward)
+				} else {
+					wrappedWriter = ansi.NewWriterForState(w.state, &w.buf)
+				}
 				for i := 0; i < int(w.Indent); i++ {
 					w.IndentFunc(wrappedWriter)
 				}
 				// restore our internal state using the wrapped writer's state
 				w.state = wrappedWriter.ExportState()
 			} else {
-				buf[0] = ' '
-				for i := 0; i < int(w.Indent); i++ {
-					if _, err := w.Forward.Write(buf[:]); err != nil {
-						return err
+				if w.Forward != nil {
+					buf[0] = ' '
+					for i := 0; i < int(w.Indent); i++ {
+						if _, err := w.Forward.Write(buf[:]); err != nil {
+							return err
+						}
+					}
+				} else {
+					for i := 0; i < int(w.Indent); i++ {
+						w.buf.WriteByte(' ')
 					}
 				}
 			}
 
 			w.skipIndent = true
-			if _, err := w.Forward.Write(w.state.RestoreSequence()); err != nil {
-				return err
+			if w.Forward != nil {
+				if _, err := w.Forward.Write(w.state.RestoreSequence()); err != nil {
+					return err
+				}
+			} else {
+				w.state.WriteRestoreSequence(&w.buf)
 			}
 		}
 
@@ -260,8 +276,12 @@ func (w *AdvancedWriter) WriteByte(b byte) error {
 	}
 
 	buf[0] = b
-	_, err := w.Forward.Write(buf[:])
-	return err
+	if w.Forward != nil {
+		_, err := w.Forward.Write(buf[:])
+		return err
+	} else {
+		return w.buf.WriteByte(b)
+	}
 }
 
 func (w *AdvancedWriter) Bytes() []byte {

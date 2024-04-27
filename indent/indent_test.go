@@ -130,6 +130,18 @@ func BenchmarkIndentString(b *testing.B) {
 	})
 }
 
+func BenchmarkIndentString_AdvancedWriter(b *testing.B) {
+	b.RunParallel(func(pb *testing.PB) {
+		b.ReportAllocs()
+		b.ResetTimer()
+		for pb.Next() {
+			writer := NewAdvancedWriter(nil, 2, nil)
+			writer.Write([]byte("foo"))
+			writer.String()
+		}
+	})
+}
+
 func BenchmarkIndentBytes(b *testing.B) {
 	foo := []byte("foo")
 	b.RunParallel(func(pb *testing.PB) {
@@ -137,6 +149,18 @@ func BenchmarkIndentBytes(b *testing.B) {
 		b.ResetTimer()
 		for pb.Next() {
 			Bytes(foo, 2)
+		}
+	})
+}
+
+func BenchmarkIndentBytes_AdvancedWriter(b *testing.B) {
+	b.RunParallel(func(pb *testing.PB) {
+		b.ReportAllocs()
+		b.ResetTimer()
+		for pb.Next() {
+			writer := NewAdvancedWriter(nil, 2, nil)
+			writer.Write([]byte("foo"))
+			writer.Bytes()
 		}
 	})
 }

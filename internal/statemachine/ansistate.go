@@ -68,6 +68,15 @@ func (ansiState *AnsiState) WriteRestoreSequence(out *bytes.Buffer) {
 		out.WriteString("\x1b[")
 		out.Write(ansiState.colorCmd.CommandId)
 	}
+	ansiState.WriteXtermRestoreSequence(out)
+}
+
+// Writes the xterm link restore sequence to the buffer for the stored
+// xterm link state, if any.
+//
+// This is useful if you want are manipulating a stream in a way that
+// only affects the xterm link state
+func (ansiState *AnsiState) WriteXtermRestoreSequence(out *bytes.Buffer) {
 	if ansiState.xtermLinkCommand.Type != TypeNone {
 		out.WriteString("\x1b]")
 		out.Write(ansiState.xtermLinkCommand.CommandId)

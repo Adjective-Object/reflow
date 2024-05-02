@@ -38,6 +38,22 @@ func TestWrapXtermHyperlinks(t *testing.T) {
 		})
 	})
 
+	t.Run("trailing period", func(t *testing.T) {
+		runTestCase(t, testCase{
+			input: "https://example.com.",
+			expected: "\x1b]8;id=" + linkIdStr("https://example.com", 0) +
+				";https://example.com\x1b\\https://example.com\x1b]8;;\x1b\\.",
+		})
+	})
+
+	t.Run("trailing colon", func(t *testing.T) {
+		runTestCase(t, testCase{
+			input: "https://example.com:",
+			expected: "\x1b]8;id=" + linkIdStr("https://example.com", 0) +
+				";https://example.com\x1b\\https://example.com\x1b]8;;\x1b\\:",
+		})
+	})
+
 	t.Run("nested link", func(t *testing.T) {
 		runTestCase(t, testCase{
 			input: "\x1b]8;id=34388;https://example.com\x1b\\ This inner link should be wrapped, but the xterm link header shouldnt be https://example2.com ...\x1b]8;;\x1b\\",

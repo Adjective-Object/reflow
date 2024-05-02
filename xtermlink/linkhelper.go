@@ -48,7 +48,10 @@ type match struct {
 // regexps are generally not very performant, and will produce a lot of garbage
 // during URL matching
 
-var linkRegexp = regexp.MustCompile(`(?:(https?|file)://(?:(?:\\\s)|\S)+[^\s.]|(?:[A-Za-z]:[\\/]|\./|\.\./|\/)(?:(?:[^ \\/]*[\\/])+[^ \\/]*))`)
+const URL_RE = `(https?|file)://(?:(?:\\\s)|\S)+[^\s:.]`
+const FILEPATH_RE = `(?:[A-Za-z]:[\\/]|\./|\.\./|\/)(?:(?:[^ \\/]*[\\/])+[^ \\/]*)`
+
+var linkRegexp = regexp.MustCompile(URL_RE + `|` + FILEPATH_RE)
 
 func findXTermlinkMatches(text []byte) []match {
 	regexpRes := linkRegexp.FindAllSubmatchIndex(text, -1)

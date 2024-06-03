@@ -1,0 +1,6 @@
+go test fuzz v1
+string("0000\x1b\nA0")
+int(4)
+bool(true)
+bool(false)
+int(-3)

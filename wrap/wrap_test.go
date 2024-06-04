@@ -14,6 +14,7 @@ var tt = []struct {
 	Expected      string
 	Limit         int
 	KeepNewlines  bool
+	BreakAnsi     bool
 	PreserveSpace bool
 	TabWidth      int
 }{
@@ -107,14 +108,30 @@ var tt = []struct {
 		PreserveSpace: false,
 		TabWidth:      0,
 	},
-	// ANSI control codes don't get wrapped:
+	// ANSI control codes don't get wrapped when BreakAnsi = false
 	{
 		Input:         "\x1B[38;2;249;38;114m(\x1B[0m\x1B[38;2;248;248;242mjust another test\x1B[38;2;249;38;114m)\x1B[0m",
 		Expected:      "\x1B[38;2;249;38;114m(\x1B[0m\x1B[38;2;248;248;242mju\nst \nano\nthe\nr t\nest\x1B[38;2;249;38;114m\n)\x1B[0m",
 		Limit:         3,
+		BreakAnsi:     false,
 		KeepNewlines:  true,
 		PreserveSpace: false,
 		TabWidth:      0,
+	},
+	// Link bodies get wrapped when BreakAnsi = true
+	{
+		Input: "\x1b]8;id=17175;https://example.website/docs\x1b\\The documentation website with a long link body!!\x1b]8;;\x1b\\\n",
+		Expected: "\x1b]8;id=17175;https://example.website/docs\x1b\\" +
+			"The documentation websit\x1b]8;id=17175;\x1b\\\n" +
+			"\x1b]8;id=17175;https://example.website/docs\x1b\\" +
+			"e with a long link body!\x1b]8;id=17175;\x1b\\\n" +
+			"\x1b]8;id=17175;https://example.website/docs\x1b\\" +
+			"!\x1b]8;;\x1b\\\n",
+		Limit:         24,
+		BreakAnsi:     true,
+		KeepNewlines:  true,
+		PreserveSpace: false,
+		TabWidth:      2,
 	},
 }
 
@@ -136,6 +153,7 @@ func TestWrap(t *testing.T) {
 		f.KeepNewlines = tc.KeepNewlines
 		f.PreserveSpace = tc.PreserveSpace
 		f.TabWidth = tc.TabWidth
+		f.BreakAnsi = tc.BreakAnsi
 
 		_, err := f.Write([]byte(tc.Input))
 		if err != nil {
@@ -143,7 +161,7 @@ func TestWrap(t *testing.T) {
 		}
 
 		if f.String() != tc.Expected {
-			t.Errorf("Test %d, expected:\n\n`%s`\n\nActual Output:\n\n`%s`", i, tc.Expected, f.String())
+			t.Errorf("Test %d, expected:\n\n`%s`\n\nActual Output:\n\n`%s`", i, strconv.Quote(tc.Expected), strconv.Quote(f.String()))
 		} else {
 			// check height writer with WriteString
 			h1 := NewHeightWriter(tc.Limit)
@@ -232,6 +250,7 @@ func BenchmarkWrap(b *testing.B) {
 			t.KeepNewlines = tc.KeepNewlines
 			t.PreserveSpace = tc.PreserveSpace
 			t.TabWidth = tc.TabWidth
+			t.BreakAnsi = tc.BreakAnsi
 			t.WriteString(tc.Input)
 		}
 	}

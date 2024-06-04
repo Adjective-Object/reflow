@@ -19,11 +19,13 @@ type Wrap struct {
 	Newline       []rune
 	KeepNewlines  bool
 	PreserveSpace bool
-	TabWidth      int
-
+	// Resets the ansi state before each line break,
+	// then restores it after the line break
+	BreakAnsi       bool
+	TabWidth        int
 	buf             *bytes.Buffer
 	lineLen         int
-	state           statemachine.StateMachine
+	state           statemachine.AnsiState
 	forcefulNewline bool
 }
 
@@ -61,8 +63,17 @@ func String(s string, limit int) string {
 }
 
 func (w *Wrap) addNewLine(c rune) {
+	if w.BreakAnsi {
+		w.state.WriteResetSequence(w.buf)
+	}
+
 	// fmt.Println("  newline")
 	_, _ = w.buf.WriteRune(c)
+
+	if w.BreakAnsi {
+		w.state.WriteRestoreSequence(w.buf)
+	}
+
 	w.lineLen = 0
 }
 
@@ -84,7 +95,7 @@ func (w *Wrap) Write(b []byte) (int, error) {
 		var step statemachine.StateTransition
 		nextI := i + cw
 		for j := i; j < nextI; j++ {
-			step = w.state.Next(b[j])
+			step = w.state.Next(b[j]).StateTransition
 		}
 		i = nextI
 
@@ -113,7 +124,7 @@ func (w *Wrap) WriteString(s string) (int, error) {
 		// update state machine by stepping over the current character, one byte at a time
 		var step statemachine.StateTransition
 		for j := i; j < nextI; j++ {
-			step = w.state.Next(s[j])
+			step = w.state.Next(s[j]).StateTransition
 		}
 
 		w.stepState(step, c)

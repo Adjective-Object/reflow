@@ -119,11 +119,9 @@ func (ansiState *AnsiState) WriteResetSequence(out *bytes.Buffer) {
 	}
 	if ansiState.xtermLinkCommand.Type != TypeNone {
 		out.WriteString(xtermResetSeq1)
-		// write any link parameters
-		if len(ansiState.xtermLinkCommand.Params) > 0 &&
-			len(ansiState.xtermLinkCommand.Params[0]) > 0 {
-			out.Write(ansiState.xtermLinkCommand.Params[0])
-		}
+		// Don't write the link parameters as part of the reset sequence
+		// because they break some terminal emulators (e.g. vscode's
+		// integrated xterm.js terminal), despite being part of the spec.
 		out.WriteString(xtermResetSeq2)
 	}
 }

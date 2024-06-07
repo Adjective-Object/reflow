@@ -63,7 +63,7 @@ var tt = []ansi_tutils.TestCase{
 	// XTerm Links with IDs
 	{
 		Input:    "\x1B]8;id=1;https://gith\nub.com\x07foo\nbar\x1b]8;;\x07",
-		Expected: "    \x1B]8;id=1;https://gith\nub.com\x07foo\n\x1b]8;id=1;\x07    \x1B]8;id=1;https://gith\nub.com\x07bar\x1b]8;;\x07",
+		Expected: "    \x1B]8;id=1;https://gith\nub.com\x07foo\n\x1b]8;;\x07    \x1B]8;id=1;https://gith\nub.com\x07bar\x1b]8;;\x07",
 		Params:   params{4, nil},
 	},
 }

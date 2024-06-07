@@ -125,11 +125,11 @@ var tt = []struct {
 		// link open
 		"\x1b]8;id=17175;https://example.website/docs\x07" +
 			"The documentation websit" +
-			"\x1b]8;id=17175;\x07\n" +
+			"\x1b]8;;\x07\n" +
 
 			"\x1b]8;id=17175;https://example.website/docs\x07" +
 			"e with a long link body." +
-			"\x1b]8;id=17175;\x07\n" +
+			"\x1b]8;;\x07\n" +
 
 			"\x1b]8;id=17175;https://example.website/docs\x07" +
 			"." +

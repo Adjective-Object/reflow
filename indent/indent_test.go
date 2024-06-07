@@ -45,25 +45,25 @@ var tt = []ansi_tutils.TestCase{
 	// ANSI color sequence codes:
 	{
 		Input:    "\x1B[38;2;249;38;114mfoo",
-		Expected: "\x1B[38;2;249;38;114m\x1B[0m    \x1B[38;2;249;38;114mfoo",
+		Expected: "    \x1B[38;2;249;38;114mfoo",
 		Params:   params{4, nil},
 	},
 	// ANSI color sequence codes interacting with newlines:
 	{
 		Input:    "\x1B[38;2;249;38;114mfoo\nbar",
-		Expected: "\x1B[38;2;249;38;114m\x1B[0m    \x1B[38;2;249;38;114mfoo\n\x1B[0m    \x1B[38;2;249;38;114mbar",
+		Expected: "    \x1B[38;2;249;38;114mfoo\n\x1b[0m    \x1B[38;2;249;38;114mbar",
 		Params:   params{4, nil},
 	},
 	// XTerm Links
 	{
-		Input:    "\x1B]8;;https://gith\nub.com\x07foo",
-		Expected: "\x1B]8;;https://gith\nub.com\x07\x1B]8;;\x1b\\    \x1B]8;;https://gith\nub.com\x1b\\foo",
+		Input:    "\x1B]8;;https://gith\nub.com\x07foo\nbar",
+		Expected: "    \x1B]8;;https://gith\nub.com\x07foo\n\x1b]8;;\x07    \x1B]8;;https://gith\nub.com\x07bar",
 		Params:   params{4, nil},
 	},
 	// XTerm Links with IDs
 	{
-		Input:    "\x1B]8;id=1;https://gith\nub.com\x07foo",
-		Expected: "\x1B]8;id=1;https://gith\nub.com\x07\x1B]8;id=1;\x1b\\    \x1B]8;id=1;https://gith\nub.com\x1b\\foo",
+		Input:    "\x1B]8;id=1;https://gith\nub.com\x07foo\nbar\x1b]8;;\x07",
+		Expected: "    \x1B]8;id=1;https://gith\nub.com\x07foo\n\x1b]8;id=1;\x07    \x1B]8;id=1;https://gith\nub.com\x07bar\x1b]8;;\x07",
 		Params:   params{4, nil},
 	},
 }
@@ -135,7 +135,7 @@ func BenchmarkIndentString_AdvancedWriter(b *testing.B) {
 		b.ReportAllocs()
 		b.ResetTimer()
 		for pb.Next() {
-			writer := NewAdvancedWriter(nil, 2, nil)
+			writer := NewWriterPipe(nil, 2, nil)
 			writer.Write([]byte("foo"))
 			writer.String()
 		}
@@ -158,7 +158,7 @@ func BenchmarkIndentBytes_AdvancedWriter(b *testing.B) {
 		b.ReportAllocs()
 		b.ResetTimer()
 		for pb.Next() {
-			writer := NewAdvancedWriter(nil, 2, nil)
+			writer := NewWriterPipe(nil, 2, nil)
 			writer.Write([]byte("foo"))
 			writer.Bytes()
 		}
@@ -198,7 +198,7 @@ func BenchmarkCompatTests_AdvancedWriter_Fwd(b *testing.B) {
 					continue
 				}
 
-				writer := NewAdvancedWriter(&bytes.Buffer{}, t.Params.(params).Indent, t.Params.(params).IndentFunc)
+				writer := NewWriterPipe(&bytes.Buffer{}, t.Params.(params).Indent, t.Params.(params).IndentFunc)
 				writer.Write([]byte(t.Input))
 			}
 		}
@@ -218,7 +218,7 @@ func BenchmarkCompatTests_AdvancedWriter_Buf(b *testing.B) {
 					continue
 				}
 
-				writer := NewAdvancedWriter(nil, t.Params.(params).Indent, t.Params.(params).IndentFunc)
+				writer := NewWriterPipe(nil, t.Params.(params).Indent, t.Params.(params).IndentFunc)
 				writer.Write([]byte(t.Input))
 			}
 		}

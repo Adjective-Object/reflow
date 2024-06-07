@@ -3,11 +3,10 @@ package padding
 import (
 	"bytes"
 	"io"
-	"unicode/utf8"
+	"strings"
 
 	"github.com/mattn/go-runewidth"
 	"github.com/muesli/reflow/ansi"
-	"github.com/muesli/reflow/internal/statemachine"
 )
 
 type PaddingFunc func(w io.Writer)
@@ -16,17 +15,20 @@ type Writer struct {
 	Padding uint
 	PadFunc PaddingFunc
 
-	ansiState statemachine.AnsiState
-	buf       bytes.Buffer
-	cache     bytes.Buffer
-	lineLen   int
-	ansi      bool
+	ansiWriter *ansi.Writer
+	buf        bytes.Buffer
+	cache      bytes.Buffer
+	lineLen    int
+	ansi       bool
 }
 
 func NewWriter(width uint, paddingFunc PaddingFunc) *Writer {
 	w := &Writer{
 		Padding: width,
 		PadFunc: paddingFunc,
+	}
+	w.ansiWriter = &ansi.Writer{
+		Forward: &w.buf,
 	}
 	return w
 }
@@ -35,16 +37,16 @@ func NewWriterPipe(forward io.Writer, width uint, paddingFunc PaddingFunc) *Writ
 	return &Writer{
 		Padding: width,
 		PadFunc: paddingFunc,
+		ansiWriter: &ansi.Writer{
+			Forward: forward,
+		},
 	}
 }
 
 // Bytes is shorthand for declaring a new default padding-writer instance,
 // used to immediately pad a byte slice.
 func Bytes(b []byte, width uint) []byte {
-	f := Writer{
-		Padding: width,
-	}
-	f.buf.Grow(int(width))
+	f := NewWriter(width, nil)
 	_, _ = f.Write(b)
 	_ = f.Flush()
 
@@ -54,106 +56,53 @@ func Bytes(b []byte, width uint) []byte {
 // String is shorthand for declaring a new default padding-writer instance,
 // used to immediately pad a string.
 func String(s string, width uint) string {
-	f := Writer{
-		Padding: width,
-	}
-	f.buf.Grow(int(width))
-	_, _ = f.WriteString(s)
-	_ = f.Flush()
-
-	return f.String()
+	return string(Bytes([]byte(s), width))
 }
 
 // Write is used to write content to the padding buffer.
 func (w *Writer) Write(b []byte) (int, error) {
-	i := 0
-
-	// iterate runes without copying the byte array onto the heap
-	for i < len(b) {
-		c, charWidth := utf8.DecodeRune(b[i:])
-		// consume all the bytes of this character in the statemachine
-		nextI := i + charWidth
-		var step statemachine.CollectorStep
-		for j := i; j < nextI; j++ {
-			step = w.ansiState.Next(b[j])
-		}
-
-		if step.IsPrinting() {
-			w.lineLen += runewidth.RuneWidth(c)
-
-			if b[i] == '\n' {
-				// end of current line
-				err := w.pad()
-				if err != nil {
-					return 0, err
-				}
-				if w.ansiState.IsDirty() {
-					w.ansiState.WriteResetSequence(&w.buf)
-				}
-				w.lineLen = 0
+	for _, c := range string(b) {
+		if c == '\x1B' {
+			// ANSI escape sequence
+			w.ansi = true
+		} else if w.ansi {
+			if (c >= 0x41 && c <= 0x5a) || (c >= 0x61 && c <= 0x7a) {
+				// ANSI sequence terminated
+				w.ansi = false
 			}
-		}
+		} else {
+			w.lineLen += runewidth.StringWidth(string(c))
 
-		if n, err := w.buf.Write(b[i:nextI]); err != nil {
-			return i + n, err
-		}
-
-		i = nextI
-	}
-
-	return len(b), nil
-}
-
-// Write is used to write content to the padding buffer.
-func (w *Writer) WriteString(s string) (int, error) {
-	i := 0
-	for nextI, c := range s {
-		var step statemachine.CollectorStep
-		for j := i; j < nextI; j++ {
-			step = w.ansiState.Next(s[j])
-		}
-
-		if step.IsPrinting() {
-			w.lineLen += runewidth.RuneWidth(c)
 			if c == '\n' {
 				// end of current line
 				err := w.pad()
 				if err != nil {
 					return 0, err
 				}
-				w.ansiState.WriteResetSequence(&w.buf)
+				w.ansiWriter.ResetAnsi()
 				w.lineLen = 0
 			}
 		}
 
-		if _, err := w.buf.WriteRune(c); err != nil {
-			return i, err
+		_, err := w.ansiWriter.Write([]byte(string(c)))
+		if err != nil {
+			return 0, err
 		}
-
-		i = nextI
 	}
 
-	return len(s), nil
+	return len(b), nil
 }
 
 func (w *Writer) pad() error {
 	if w.Padding > 0 && uint(w.lineLen) < w.Padding {
 		if w.PadFunc != nil {
-			// if we have a padding function, then we need an actual ansi writer
-			// in order to intercept the arbitrary write operations that a consumer
-			// might perform.
-			writer := ansi.WriterForState(w.ansiState, &w.buf)
 			for i := 0; i < int(w.Padding)-w.lineLen; i++ {
-				w.PadFunc(writer)
+				w.PadFunc(w.ansiWriter)
 			}
-			w.ansiState = writer.ExportState()
 		} else {
-			// Otherwise, we can just write spaces directly to the buffer
-			for i := 0; i < int(w.Padding)-w.lineLen; i++ {
-				_, err := w.buf.WriteRune(' ')
-				if err != nil {
-					return err
-				}
+			_, err := w.ansiWriter.Write([]byte(strings.Repeat(" ", int(w.Padding)-w.lineLen)))
+			if err != nil {
+				return err
 			}
 		}
 	}

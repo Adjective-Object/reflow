@@ -223,7 +223,7 @@ func TestCollectOSCCommand(t *testing.T) {
 		})
 	})
 
-	t.Run("terminated with \x1b\\", func(t *testing.T) {
+	t.Run("terminated with \x07", func(t *testing.T) {
 		runCommandStepperTest(t, commandStepperTestCase{
 			steps: []commandStepperTestCaseStep{
 				{
@@ -283,7 +283,7 @@ func TestCollectOSCCommand(t *testing.T) {
 		})
 	})
 
-	t.Run("aborted \x1b\\ seq", func(t *testing.T) {
+	t.Run("aborted \x07 seq", func(t *testing.T) {
 		runCommandStepperTest(t, commandStepperTestCase{
 			steps: []commandStepperTestCaseStep{
 				{

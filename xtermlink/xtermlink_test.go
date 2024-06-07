@@ -34,7 +34,7 @@ func TestWrapXtermHyperlinks(t *testing.T) {
 		runTestCase(t, testCase{
 			input: "https://example.com",
 			expected: "\x1b]8;id=" + linkIdStr("https://example.com", 0) +
-				";https://example.com\x1b\\https://example.com\x1b]8;;\x1b\\",
+				";https://example.com\x07https://example.com\x1b]8;;\x07",
 		})
 	})
 
@@ -42,7 +42,7 @@ func TestWrapXtermHyperlinks(t *testing.T) {
 		runTestCase(t, testCase{
 			input: "https://example.com.",
 			expected: "\x1b]8;id=" + linkIdStr("https://example.com", 0) +
-				";https://example.com\x1b\\https://example.com\x1b]8;;\x1b\\.",
+				";https://example.com\x07https://example.com\x1b]8;;\x07.",
 		})
 	})
 
@@ -50,15 +50,15 @@ func TestWrapXtermHyperlinks(t *testing.T) {
 		runTestCase(t, testCase{
 			input: "https://example.com:",
 			expected: "\x1b]8;id=" + linkIdStr("https://example.com", 0) +
-				";https://example.com\x1b\\https://example.com\x1b]8;;\x1b\\:",
+				";https://example.com\x07https://example.com\x1b]8;;\x07:",
 		})
 	})
 
 	t.Run("nested link", func(t *testing.T) {
 		runTestCase(t, testCase{
-			input: "\x1b]8;id=34388;https://example.com\x1b\\ This inner link should be wrapped, but the xterm link header shouldnt be https://example2.com ...\x1b]8;;\x1b\\",
-			expected: "\x1b]8;id=34388;https://example.com\x1b\\ This inner link should be wrapped, but the xterm link header shouldnt be \x1b]8;id=" + linkIdStr("https://example2.com", 0) +
-				";https://example2.com\x1b\\https://example2.com\x1b]8;;\x1b\\\x1b]8;id=34388;https://example.com\x1b\\ ...\x1b]8;;\x1b\\",
+			input: "\x1b]8;id=34388;https://example.com\x07 This inner link should be wrapped, but the xterm link header shouldnt be https://example2.com ...\x1b]8;;\x07",
+			expected: "\x1b]8;id=34388;https://example.com\x07 This inner link should be wrapped, but the xterm link header shouldnt be \x1b]8;id=" + linkIdStr("https://example2.com", 0) +
+				";https://example2.com\x07https://example2.com\x1b]8;;\x07\x1b]8;id=34388;https://example.com\x07 ...\x1b]8;;\x07",
 		})
 	})
 
@@ -66,8 +66,8 @@ func TestWrapXtermHyperlinks(t *testing.T) {
 		runTestCase(t, testCase{
 			input: "multiple https://example.com links https://example.com",
 			expected: "multiple \x1b]8;id=" + linkIdStr("https://example.com", 0) +
-				";https://example.com\x1b\\https://example.com\x1b]8;;\x1b\\ links \x1b]8;id=" + linkIdStr("https://example.com", 1) +
-				";https://example.com\x1b\\https://example.com\x1b]8;;\x1b\\",
+				";https://example.com\x07https://example.com\x1b]8;;\x07 links \x1b]8;id=" + linkIdStr("https://example.com", 1) +
+				";https://example.com\x07https://example.com\x1b]8;;\x07",
 		})
 	})
 
@@ -75,7 +75,7 @@ func TestWrapXtermHyperlinks(t *testing.T) {
 		runTestCase(t, testCase{
 			input: "https://example.com/with/path",
 			expected: "\x1b]8;id=" + linkIdStr("https://example.com/with/path", 0) +
-				";https://example.com/with/path\x1b\\https://example.com/with/path\x1b]8;;\x1b\\",
+				";https://example.com/with/path\x07https://example.com/with/path\x1b]8;;\x07",
 		})
 	})
 
@@ -83,7 +83,7 @@ func TestWrapXtermHyperlinks(t *testing.T) {
 		runTestCase(t, testCase{
 			input: "https://example.com/with/path?and=query",
 			expected: "\x1b]8;id=" + linkIdStr("https://example.com/with/path?and=query", 0) +
-				";https://example.com/with/path?and=query\x1b\\https://example.com/with/path?and=query\x1b]8;;\x1b\\",
+				";https://example.com/with/path?and=query\x07https://example.com/with/path?and=query\x1b]8;;\x07",
 		})
 	})
 
@@ -91,7 +91,7 @@ func TestWrapXtermHyperlinks(t *testing.T) {
 		runTestCase(t, testCase{
 			input: "https://example.com/with/path?and=query#and-fragment",
 			expected: "\x1b]8;id=" + linkIdStr("https://example.com/with/path?and=query#and-fragment", 0) +
-				";https://example.com/with/path?and=query#and-fragment\x1b\\https://example.com/with/path?and=query#and-fragment\x1b]8;;\x1b\\",
+				";https://example.com/with/path?and=query#and-fragment\x07https://example.com/with/path?and=query#and-fragment\x1b]8;;\x07",
 		})
 	})
 
@@ -99,7 +99,7 @@ func TestWrapXtermHyperlinks(t *testing.T) {
 		runTestCase(t, testCase{
 			input: "https://example.com/with/path?and=query#and-fragment\\ with\\ spaces",
 			expected: "\x1b]8;id=" + linkIdStr("https://example.com/with/path?and=query#and-fragment\\ with\\ spaces", 0) +
-				";https://example.com/with/path?and=query#and-fragment\\ with\\ spaces\x1b\\https://example.com/with/path?and=query#and-fragment\\ with\\ spaces\x1b]8;;\x1b\\",
+				";https://example.com/with/path?and=query#and-fragment\\ with\\ spaces\x07https://example.com/with/path?and=query#and-fragment\\ with\\ spaces\x1b]8;;\x07",
 		})
 	})
 
@@ -107,7 +107,7 @@ func TestWrapXtermHyperlinks(t *testing.T) {
 		runTestCase(t, testCase{
 			input: "https://example.com/with/path?and=query#and-fragment%20with%20spaces",
 			expected: "\x1b]8;id=" + linkIdStr("https://example.com/with/path?and=query#and-fragment%20with%20spaces", 0) +
-				";https://example.com/with/path?and=query#and-fragment%20with%20spaces\x1b\\https://example.com/with/path?and=query#and-fragment%20with%20spaces\x1b]8;;\x1b\\",
+				";https://example.com/with/path?and=query#and-fragment%20with%20spaces\x07https://example.com/with/path?and=query#and-fragment%20with%20spaces\x1b]8;;\x07",
 		})
 	})
 
@@ -122,12 +122,12 @@ func TestWrapXtermHyperlinks(t *testing.T) {
 		runTestCase(t, testCase{
 			input: "./with/path",
 			expected: "\x1b]8;id=" + linkIdStr("./with/path", 0) +
-				";file://./with/path\x1b\\./with/path\x1b]8;;\x1b\\",
+				";file://./with/path\x07./with/path\x1b]8;;\x07",
 		})
 		runTestCase(t, testCase{
 			input: "../with/path",
 			expected: "\x1b]8;id=" + linkIdStr("../with/path", 0) +
-				";file://../with/path\x1b\\../with/path\x1b]8;;\x1b\\",
+				";file://../with/path\x07../with/path\x1b]8;;\x07",
 		})
 	})
 
@@ -135,7 +135,7 @@ func TestWrapXtermHyperlinks(t *testing.T) {
 		runTestCase(t, testCase{
 			input: "/with/path",
 			expected: "\x1b]8;id=" + linkIdStr("/with/path", 0) +
-				";file:///with/path\x1b\\/with/path\x1b]8;;\x1b\\",
+				";file:///with/path\x07/with/path\x1b]8;;\x07",
 		})
 	})
 
@@ -143,7 +143,7 @@ func TestWrapXtermHyperlinks(t *testing.T) {
 		runTestCase(t, testCase{
 			input: "C://with/path",
 			expected: "\x1b]8;id=" + linkIdStr("C://with/path", 0) +
-				";file://C://with/path\x1b\\C://with/path\x1b]8;;\x1b\\",
+				";file://C://with/path\x07C://with/path\x1b]8;;\x07",
 		})
 	})
 
@@ -151,7 +151,7 @@ func TestWrapXtermHyperlinks(t *testing.T) {
 		runTestCase(t, testCase{
 			input: "C:\\\\with\\path",
 			expected: "\x1b]8;id=" + linkIdStr("C:\\\\with\\path", 0) +
-				";file://C:\\\\with\\path\x1b\\C:\\\\with\\path\x1b]8;;\x1b\\",
+				";file://C:\\\\with\\path\x07C:\\\\with\\path\x1b]8;;\x07",
 		})
 	})
 
@@ -159,8 +159,8 @@ func TestWrapXtermHyperlinks(t *testing.T) {
 		runTestCase(t, testCase{
 			input: "multiple C:\\\\with\\path identical links C:\\\\with\\path",
 			expected: "multiple \x1b]8;id=" + linkIdStr("C:\\\\with\\path", 0) +
-				";file://C:\\\\with\\path\x1b\\C:\\\\with\\path\x1b]8;;\x1b\\ identical links \x1b]8;id=" + linkIdStr("C:\\\\with\\path", 1) +
-				";file://C:\\\\with\\path\x1b\\C:\\\\with\\path\x1b]8;;\x1b\\",
+				";file://C:\\\\with\\path\x07C:\\\\with\\path\x1b]8;;\x07 identical links \x1b]8;id=" + linkIdStr("C:\\\\with\\path", 1) +
+				";file://C:\\\\with\\path\x07C:\\\\with\\path\x1b]8;;\x07",
 		})
 	})
 

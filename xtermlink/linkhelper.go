@@ -11,7 +11,7 @@ import (
 // WrapLinkBytes wraps the content in an xterm hyperlink escape sequence
 func WrapLinkBytes(linkID string, content []byte, link []byte) []byte {
 	const LINK_TAG_START = "\x1b]8;"
-	const LINK_TAG_END = "\x1b\\"
+	const LINK_TAG_END = "\x07"
 	out := bytes.Buffer{}
 	out.Grow(
 		2*len(LINK_TAG_START) + // opening tags

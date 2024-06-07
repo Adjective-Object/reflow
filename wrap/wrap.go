@@ -29,10 +29,8 @@ type Wrap struct {
 	forcefulNewline bool
 }
 
-// NewWriter returns a new instance of a wrapping writer, initialized with
-// default settings.
-func NewWriter(limit int) *Wrap {
-	return &Wrap{
+func DefaultWriter(limit int) Wrap {
+	return Wrap{
 		Limit:        limit,
 		Newline:      defaultNewline,
 		KeepNewlines: true,
@@ -45,6 +43,13 @@ func NewWriter(limit int) *Wrap {
 
 		buf: &bytes.Buffer{},
 	}
+}
+
+// NewWriter returns a new instance of a word-wrapping writer, initialized with
+// default settings.
+func NewWriter(limit int) *Wrap {
+	d := DefaultWriter(limit)
+	return &d
 }
 
 // Bytes is shorthand for declaring a new default Wrap instance,

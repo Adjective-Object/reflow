@@ -14,16 +14,6 @@ import (
 //                                  //
 //////////////////////////////////////
 
-// Common interface fronting AdvancedWriter and SimpleWriter
-// for backwards-compatibility with existing code.
-type Writer interface {
-	Write([]byte) (int, error)
-	WriteString(string) (int, error)
-	WriteByte(byte) error
-	Bytes() []byte
-	String() string
-}
-
 // MakeSimpleWriter creates a new indent-writer instance, used to write content
 // to an internal buffer, with the specified indent level.
 func NewSimpleWriter(indent uint) SimpleWriter {
@@ -38,7 +28,7 @@ func NewSimpleWriter(indent uint) SimpleWriter {
 // If you don't need indent functions, you should prefer using MakeSimpleWriter instead.
 //
 // See NewWriterPipe for an explanation
-func NewWriter(indent uint, indentFunc IndentFunc) Writer {
+func NewWriter(indent uint, indentFunc IndentFunc) *Writer {
 	return NewWriterPipe(nil, indent, indentFunc)
 }
 
@@ -53,12 +43,12 @@ func NewWriter(indent uint, indentFunc IndentFunc) Writer {
 //
 // If this is used in an inner-loop function, this can lead to a lot of repeated heap
 // allocations
-func NewWriterPipe(w io.Writer, indent uint, indentFunc IndentFunc) Writer {
-	if indentFunc == nil && w == nil {
-		s := NewSimpleWriter(indent)
-		return &s
+func NewWriterPipe(w io.Writer, indent uint, indentFunc IndentFunc) *Writer {
+	return &Writer{
+		Indent:     indent,
+		IndentFunc: indentFunc,
+		Forward:    w,
 	}
-	return NewAdvancedWriter(w, indent, indentFunc)
 }
 
 ///////////////////
@@ -136,21 +126,21 @@ func (w *SimpleWriter) WriteString(s string) (int, error) {
 
 func (w *SimpleWriter) WriteByte(b byte) error {
 	step := w.state.Next(b)
-	if step.IsPrinting() {
-		if !w.skipIndent {
-			w.state.WriteResetSequence(&w.buf)
-			for i := 0; i < int(w.Indent); i++ {
-				if err := w.buf.WriteByte(' '); err != nil {
-					return err
-				}
+	if !w.skipIndent {
+		w.state.WriteResetSequence(&w.buf)
+		for i := 0; i < int(w.Indent); i++ {
+			if err := w.buf.WriteByte(' '); err != nil {
+				return err
 			}
-
-			w.skipIndent = true
-			w.state.WriteRestoreSequence(&w.buf)
 		}
 
+		w.skipIndent = true
+		w.state.WriteRestoreSequence(&w.buf)
+	}
+
+	if step.IsPrinting() {
 		if b == '\n' {
-			// end of current line
+			// end of current line, queue an indent.
 			w.skipIndent = false
 		}
 	}
@@ -179,7 +169,7 @@ type IndentFunc func(w io.Writer)
 // The "advanced" writer type, that allows for custom indentation functions
 //
 // Prefer using SimpleWriter where possible, as it's more efficient.
-type AdvancedWriter struct {
+type Writer struct {
 	Indent     uint
 	IndentFunc IndentFunc
 	buf        bytes.Buffer
@@ -188,16 +178,7 @@ type AdvancedWriter struct {
 	skipIndent bool
 }
 
-func NewAdvancedWriter(w io.Writer, indent uint, indentFunc IndentFunc) *AdvancedWriter {
-	writer := &AdvancedWriter{
-		Indent:     indent,
-		IndentFunc: indentFunc,
-		Forward:    w,
-	}
-	return writer
-}
-
-func (w *AdvancedWriter) Write(b []byte) (int, error) {
+func (w *Writer) Write(b []byte) (int, error) {
 	var i int
 	for i := 0; i < len(b); i++ {
 		if err := w.WriteByte(b[i]); err != nil {
@@ -207,7 +188,7 @@ func (w *AdvancedWriter) Write(b []byte) (int, error) {
 	return i, nil
 }
 
-func (w *AdvancedWriter) WriteString(s string) (int, error) {
+func (w *Writer) WriteString(s string) (int, error) {
 	for i := 0; i < len(s); i++ {
 		if err := w.WriteByte(s[i]); err != nil {
 			return i, err
@@ -217,58 +198,58 @@ func (w *AdvancedWriter) WriteString(s string) (int, error) {
 	return len(s), nil
 }
 
-func (w *AdvancedWriter) WriteByte(b byte) error {
+func (w *Writer) WriteByte(b byte) error {
 	// buffer used to write single bytes to the Forwarded io.Writer
 	var buf [1]byte
 	step := w.state.Next(b)
-	if step.IsPrinting() {
-		if !w.skipIndent {
-			if w.Forward != nil {
-				if _, err := w.Forward.Write(w.state.ResetSequence()); err != nil {
-					return err
-				}
-			} else {
-				w.state.WriteResetSequence(&w.buf)
+	if !w.skipIndent {
+		if w.Forward != nil {
+			if _, err := w.Forward.Write(w.state.ResetSequence()); err != nil {
+				return err
 			}
-			if w.IndentFunc != nil {
-				// if we have an indent function, pass it a wrapped writer so we can
-				// track any ansi transitions in the callback.
-				var wrappedWriter *ansi.Writer
-				if w.Forward != nil {
-					wrappedWriter = ansi.NewWriterForState(w.state, w.Forward)
-				} else {
-					wrappedWriter = ansi.NewWriterForState(w.state, &w.buf)
-				}
+		} else {
+			w.state.WriteResetSequence(&w.buf)
+		}
+		if w.IndentFunc != nil {
+			// if we have an indent function, pass it a wrapped writer so we can
+			// track any ansi transitions in the callback.
+			var wrappedWriter *ansi.Writer
+			if w.Forward != nil {
+				wrappedWriter = ansi.NewWriterForState(w.state, w.Forward)
+			} else {
+				wrappedWriter = ansi.NewWriterForState(w.state, &w.buf)
+			}
+			for i := 0; i < int(w.Indent); i++ {
+				w.IndentFunc(wrappedWriter)
+			}
+			// restore our internal state using the wrapped writer's state
+			w.state = wrappedWriter.ExportState()
+		} else {
+			if w.Forward != nil {
+				buf[0] = ' '
 				for i := 0; i < int(w.Indent); i++ {
-					w.IndentFunc(wrappedWriter)
-				}
-				// restore our internal state using the wrapped writer's state
-				w.state = wrappedWriter.ExportState()
-			} else {
-				if w.Forward != nil {
-					buf[0] = ' '
-					for i := 0; i < int(w.Indent); i++ {
-						if _, err := w.Forward.Write(buf[:]); err != nil {
-							return err
-						}
-					}
-				} else {
-					for i := 0; i < int(w.Indent); i++ {
-						w.buf.WriteByte(' ')
+					if _, err := w.Forward.Write(buf[:]); err != nil {
+						return err
 					}
 				}
-			}
-
-			w.skipIndent = true
-			if w.Forward != nil {
-				if _, err := w.Forward.Write(w.state.RestoreSequence()); err != nil {
-					return err
-				}
 			} else {
-				w.state.WriteRestoreSequence(&w.buf)
+				for i := 0; i < int(w.Indent); i++ {
+					w.buf.WriteByte(' ')
+				}
 			}
 		}
 
+		w.skipIndent = true
+		if w.Forward != nil {
+			if _, err := w.Forward.Write(w.state.RestoreSequence()); err != nil {
+				return err
+			}
+		} else {
+			w.state.WriteRestoreSequence(&w.buf)
+		}
+	}
+
+	if step.IsPrinting() {
 		if b == '\n' {
 			// end of current line
 			w.skipIndent = false
@@ -284,10 +265,10 @@ func (w *AdvancedWriter) WriteByte(b byte) error {
 	}
 }
 
-func (w *AdvancedWriter) Bytes() []byte {
+func (w *Writer) Bytes() []byte {
 	return w.buf.Bytes()
 }
 
-func (w *AdvancedWriter) String() string {
+func (w *Writer) String() string {
 	return w.buf.String()
 }

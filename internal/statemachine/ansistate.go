@@ -84,7 +84,7 @@ func (ansiState *AnsiState) WriteXtermRestoreSequence(out *bytes.Buffer) {
 			out.WriteRune(';')
 			out.Write(param)
 		}
-		out.WriteString("\x1b\\")
+		out.WriteString("\x07")
 	}
 }
 
@@ -109,7 +109,7 @@ func (ansiState *AnsiState) ResetSequence() []byte {
 
 const colorResetSeq = "\x1b[0m"
 const xtermResetSeq1 = "\x1b]8;"
-const xtermResetSeq2 = ";\x1b\\"
+const xtermResetSeq2 = ";\x07"
 
 // Gets an ansi sequence that can reset a stream to a neutral state
 // against the stored state of the AnsiState

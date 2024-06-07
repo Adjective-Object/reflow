@@ -119,7 +119,14 @@ func TestTruncate(t *testing.T) {
 			3,
 			"…",
 			"\x1B]8;;https://github.com\x07Hiya!",
-			"\x1B]8;;https://github.com\x07Hi…\x1B]8;;\x1b\\",
+			"\x1B]8;;https://github.com\x07Hi…\x1B]8;;\x07",
+		},
+		// Does not truncate terminated link plus colour sequence at line end
+		{
+			27,
+			"",
+			"\x1b[33mColor Text \x1b]8;id=abcd;https://github.com\x07Untruncated Link\x1b[0m\x1b]8;;\x07",
+			"\x1b[33mColor Text \x1b]8;id=abcd;https://github.com\x07Untruncated Link\x1b[0m\x1b]8;;\x07",
 		},
 	}
 
@@ -170,8 +177,8 @@ func TestTruncateBytes(t *testing.T) {
 func TestTruncateXtermLink(t *testing.T) {
 	t.Parallel()
 	// See https://gist.github.com/egmontkob/eb114294efbcd5adb1944c9f3cb5feda
-	actual := Bytes([]byte("click on \x1b]8;;https://example.com\x07\\linktext\x1b]8;;\x1b\\"), 12)
-	expected := []byte("click on \x1b]8;;https://example.com\x07\\li\x1b]8;;\x1b\\")
+	actual := Bytes([]byte("click on \x1b]8;;https://example.com\x07\\linktext\x1b]8;;\x07"), 12)
+	expected := []byte("click on \x1b]8;;https://example.com\x07\\li\x1b]8;;\x07")
 	if !bytes.Equal(actual, expected) {
 		t.Errorf("expected:\n\n`%s`\n\nActual Output:\n\n`%s`",
 			strconv.Quote(string(expected)),

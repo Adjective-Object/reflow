@@ -54,7 +54,7 @@ func TestMargin(t *testing.T) {
 		// ANSI sequence codes:
 		{
 			"\x1B[38;2;249;38;114mfoo",
-			"\x1B[38;2;249;38;114m\x1B[0m   \x1B[38;2;249;38;114mfoo   ",
+			"   \x1B[38;2;249;38;114mfoo   ",
 			9,
 			3,
 		},

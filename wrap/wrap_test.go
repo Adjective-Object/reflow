@@ -120,13 +120,20 @@ var tt = []struct {
 	},
 	// Link bodies get wrapped when BreakAnsi = true
 	{
-		Input: "\x1b]8;id=17175;https://example.website/docs\x1b\\The documentation website with a long link body!!\x1b]8;;\x1b\\\n",
-		Expected: "\x1b]8;id=17175;https://example.website/docs\x1b\\" +
-			"The documentation websit\x1b]8;id=17175;\x1b\\\n" +
-			"\x1b]8;id=17175;https://example.website/docs\x1b\\" +
-			"e with a long link body!\x1b]8;id=17175;\x1b\\\n" +
-			"\x1b]8;id=17175;https://example.website/docs\x1b\\" +
-			"!\x1b]8;;\x1b\\\n",
+		Input: "\x1b]8;id=17175;https://example.website/docs\x07The documentation website with a long link body..\x1b]8;;\x07\n",
+		Expected:
+		// link open
+		"\x1b]8;id=17175;https://example.website/docs\x07" +
+			"The documentation websit" +
+			"\x1b]8;id=17175;\x07\n" +
+
+			"\x1b]8;id=17175;https://example.website/docs\x07" +
+			"e with a long link body." +
+			"\x1b]8;id=17175;\x07\n" +
+
+			"\x1b]8;id=17175;https://example.website/docs\x07" +
+			"." +
+			"\x1b]8;;\x07\n",
 		Limit:         24,
 		BreakAnsi:     true,
 		KeepNewlines:  true,

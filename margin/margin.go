@@ -11,7 +11,7 @@ import (
 type Writer struct {
 	buf bytes.Buffer
 	pw  *padding.Writer
-	iw  *indent.SimpleWriter
+	iw  *indent.Writer
 }
 
 func NewWriter(width uint, margin uint, marginFunc func(io.Writer)) *Writer {

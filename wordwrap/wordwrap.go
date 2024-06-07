@@ -38,7 +38,14 @@ type WordWrap struct {
 // NewWriter returns a new instance of a word-wrapping writer, initialized with
 // default settings.
 func NewWriter(limit int) *WordWrap {
-	return &WordWrap{
+	w := DefaultWriter(limit)
+	return &w
+}
+
+// NewWriter returns a new instance of a word-wrapping writer, initialized with
+// default settings.
+func DefaultWriter(limit int) WordWrap {
+	return WordWrap{
 		Limit:        limit,
 		Breakpoints:  defaultBreakpoints,
 		Newline:      defaultNewline,
@@ -168,7 +175,6 @@ func (w *WordWrap) stepState(step statemachine.StateTransition, c rune) {
 	} else {
 		w.stepPrintableState(c)
 	}
-
 }
 
 func (w *WordWrap) stepPrintableState(c rune) {

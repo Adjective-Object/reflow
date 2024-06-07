@@ -55,7 +55,7 @@ func TestBuffer_PrintableRuneWidth_XTerm(t *testing.T) {
 	t.Parallel()
 
 	var bb bytes.Buffer
-	bb.WriteString("\x1B]8;;https://github.com\x07foo\x1B]8;;\x1b\\ bar")
+	bb.WriteString("\x1B]8;;https://github.com\x07foo\x1B]8;;\x07 bar")
 	b := Buffer{bb}
 
 	if n := b.PrintableRuneWidth(); n != 7 {
